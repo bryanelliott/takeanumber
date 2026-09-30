@@ -1,6 +1,7 @@
 """Fixtures always opt into the dedicated PostgreSQL test configuration."""
 
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -8,8 +9,10 @@ from flask_migrate import upgrade
 from sqlalchemy import text
 
 from app import create_app
+from app.auth.services import register_instructor
 from app.extensions import db
-from app.models import HelpSession, Instructor
+from app.models import HelpSession, Instructor, QueueEntry, StudentIdentity
+from app.services import sessions
 
 MIGRATIONS = str(Path(__file__).resolve().parents[1] / "migrations")
 
@@ -50,12 +53,16 @@ def client(app):
 def auth_db(app, migrated_schema):
     # Only the already-validated dedicated test database is modified here.
     with app.app_context():
+        db.session.execute(db.delete(QueueEntry))
+        db.session.execute(db.delete(StudentIdentity))
         db.session.execute(db.delete(HelpSession))
         db.session.execute(db.delete(Instructor))
         db.session.commit()
     yield
     with app.app_context():
         db.session.rollback()
+        db.session.execute(db.delete(QueueEntry))
+        db.session.execute(db.delete(StudentIdentity))
         db.session.execute(db.delete(HelpSession))
         db.session.execute(db.delete(Instructor))
         db.session.commit()
@@ -88,3 +95,32 @@ def post_form(csrf_token):
         return client.post(path, data={**data, "csrf_token": token})
 
     return submit
+
+
+@pytest.fixture
+def queue_session(app, auth_db):
+    with app.app_context():
+        owner = register_instructor("queue@example.edu", "Queue Instructor", "a long test password")
+        owner_id = owner.id
+        code = sessions.start_session(owner_id).public_code
+        return owner_id, code
+
+
+@pytest.fixture
+def hidden_fields():
+    class Parser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.fields = {}
+
+        def handle_starttag(self, tag, attrs):
+            values = dict(attrs)
+            if tag == "input" and values.get("type") == "hidden":
+                self.fields[values["name"]] = values.get("value", "")
+
+    def extract(response):
+        parser = Parser()
+        parser.feed(response.text)
+        return parser.fields
+
+    return extract

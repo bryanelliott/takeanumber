@@ -22,11 +22,10 @@ Display:
 - no one currently serving
 - first waiting student as Next Up or provide a Start/Serve action depending on final queue semantics
 
-Before implementation, Codex must resolve this with the current product behavior:
-- either joining the first student automatically makes them serving, or
-- the instructor explicitly begins service
-
-Do not silently choose without documenting the chosen behavior.
+Milestone 3 choice: every join creates a `waiting` request, including the first
+request. Becoming first in line does not automatically begin service. Instructor
+advancement will explicitly begin service in Milestone 4; its controls are not
+part of Milestone 3.
 
 ### Active, serving
 
@@ -68,6 +67,11 @@ Display:
 - Leave Queue
 - Exit
 
+Milestone 3 shows queue number, people ahead, and waiting state. Estimated wait
+is explicitly unavailable until Milestone 6. Refresh status reloads server state;
+there are no Socket.IO updates or automatic alerts yet. Only this browser's name
+and request are visible, never another browser's request or entered name.
+
 ### Next Up
 
 Display:
@@ -100,6 +104,19 @@ Display:
 - session ended
 - no Take A Number action
 - no stale wait estimate
+
+Milestone 3 preserves unfinished `waiting` records when the session ends. The
+ended session makes those records inactive for participation, and the Client View
+shows only the ended state with no join/leave controls. It does not claim that a
+request was completed or voluntarily left.
+
+### Exit passive view
+
+Exit navigates to a read-only page with a Return to session link. It does not
+change queue entries, identity timestamps, or the browser cookie. Returning with
+the cookie intact restores the current request. Leave Queue is a separate POST
+that records `left_at` and retains the historical request. Rejoining gets a new
+number; repeating an old Leave cannot remove the new request.
 
 ## Accessibility notes
 

@@ -1,9 +1,9 @@
 # Take A Number
 
 A Flask/PostgreSQL application for student help queues in college labs.
-Milestones 0–2 provide the Flask/PostgreSQL foundation, instructor authentication,
-and instructor-owned help sessions with a Master View placeholder. Student queues
-follow in later milestones; see `docs/implementation-plan.md`.
+Milestones 0–3 provide the Flask/PostgreSQL foundation, instructor authentication,
+help sessions, and public student queue joining/leaving. Instructor advancement
+and real-time updates follow in later milestones; see `docs/implementation-plan.md`.
 
 ## Local setup (Windows PowerShell)
 
@@ -75,14 +75,54 @@ preserve the first `ended_at` and retain the historical record. An old End reque
 cannot affect a newly started session. Database constraints also enforce valid
 statuses and consistent timestamps. Session deletion is not offered.
 
-`app/services/sessions.py` exposes `session_for_join(public_code)` for future joins.
+`app/services/sessions.py` exposes `session_for_join(public_code)` for queue mutations.
 It rejects missing or ended sessions and retains a row lock until the caller's
-transaction ends. A future queue service must check and insert in that same
+transaction ends. The queue service checks and inserts in that same
 transaction to avoid racing End. The `accepts_joins` model property alone is only
 a state snapshot, not permission to insert later.
 
-Student joining, queue controls, QR codes, alerts, and real-time broadcasts are
-deferred. Multiple Master View browsers read the same database state when reloaded.
+Instructor advancement, QR codes, alerts, wait estimates, and real-time broadcasts
+are deferred. Multiple Master View browsers read the same database state when reloaded.
+
+## Student queue (Milestone 3)
+
+Open **Open student Client View** in an active Master View and share that link.
+`GET /session/<public_code>` is public and does not require student login.
+Students can optionally enter a name and select **Take A Number**, refresh their
+number and people-ahead count, **Leave Queue**, or **Exit** to a passive page.
+Exit leaves requests unchanged; Return to session restores the current state.
+
+All new requests wait, including the first. Instructor service advancement is
+not implemented yet. Names are optional and not used to identify or merge people.
+Each browser sees only its own request. No location, seat/workstation information,
+geolocation APIs, or browser fingerprinting is used by the student feature.
+
+The signed, HttpOnly `tan_browser` cookie contains a random 256-bit token. Its
+SHA-256 hash is stored only when joining; the raw token is never stored in the
+database or placed in URLs. Cookie scope is `/session`, SameSite is Lax, and Secure
+follows `SESSION_COOKIE_SECURE`. The default lifetime is 180 days, renewed when
+opening the Client View. This is a fallible browser profile, not a verified person:
+shared browsers share requests, and clearing cookies or changing browsers can
+lose access and permit a separate request. Names do not recover lost identities.
+
+Join and leave are CSRF-protected POSTs. Forms are also bound to the cookie that
+rendered them; missing/changed/expired cookies require reopening the view. A POST
+never invents a fresh identity when cookies are blocked. Successful POSTs redirect
+to GET. Student identity persists independently of instructor login/logout.
+
+The session row lock serializes Join, Leave, and End. Number allocation and entry
+creation commit together. PostgreSQL independently enforces unique session numbers
+and one waiting/serving entry per browser identity per session using an explicit
+partial unique index. Duplicate joins return the existing request unchanged.
+Leave records a timestamp and retains history. It targets a specific entry, so
+replaying an old Leave after rejoining cannot remove the new request.
+
+Ending a session blocks joins/leaves and hides participation controls. Unfinished
+records remain waiting under the ended session, preserving their actual history.
+The public page shows the ended state on refresh; there are no live broadcasts.
+
+Cookie expiry is separate from database retention. Names and token hashes are
+nullable to support future approved anonymization; no retention/deletion job runs.
 
 ## Instructor authentication policy
 
@@ -119,6 +159,7 @@ deferred. Multiple Master View browsers read the same database state when reload
 | `SESSION_COOKIE_SECURE` | `true` for HTTPS cookies; `false` for local HTTP (default). |
 | `AUTH_RATE_LIMIT` | Positive integer; shared sign-up/login POST limit per address (default 20). |
 | `AUTH_RATE_WINDOW_SECONDS` | Positive integer; fixed rate-limit window (default 900). |
+| `STUDENT_COOKIE_MAX_AGE` | Positive cookie lifetime in seconds (default 15552000 / 180 days). |
 
 Both `postgresql://` and `postgresql+psycopg://` select psycopg 3. SQLite and
 other database backends are rejected. `psycopg-binary` is pinned alongside
@@ -158,8 +199,8 @@ and role. Missing configuration or unavailable PostgreSQL fails tests rather tha
 silently skipping them. Non-loopback CI database support is deferred.
 
 Integration tests verify the actual database and role, apply Alembic migrations
-only to the dedicated test database, and clean help sessions before instructor
-rows between tests. Migration tests downgrade to base or the previous milestone
+only to the dedicated test database, and clean queue entries, browser identities,
+help sessions, then instructors between tests. Migration tests downgrade to base or the previous milestone
 and upgrade again on that disposable database, including preservation of existing
 instructor accounts across the HelpSession migration.
 Tests do not call `create_all` or `drop_all`. Do not run parallel test processes
@@ -176,6 +217,10 @@ with its instructor foreign key, unique public code, one-active-session index,
 and status/timestamp/counter constraints. Apply it using `db upgrade` before
 opening the dashboard after updating from Milestone 1.
 
+`migrations/versions/0003_student_queue_create_student_identity_and_queue_entry.py`
+adds browser identities and historical queue entries, including the explicit
+active-entry partial unique index. Run `db upgrade` before opening the Client View.
+
 ```powershell
 flask --app app:create_app db upgrade
 flask --app app:create_app db current
@@ -185,7 +230,9 @@ flask --app app:create_app db migrate -m "describe the schema change"
 
 The initial migration's downgrade removes the instructor table and its account
 data. Downgrading Milestone 2 to Milestone 1 removes session records but preserves
-instructors. Automated downgrade tests run only on the dedicated test database.
+instructors. Downgrading Milestone 3 removes queue entries and browser identities
+but preserves sessions/instructors and their existing queue-number counters.
+Automated downgrade tests run only on the dedicated test database.
 
 ## Stop and reset local databases
 
@@ -211,11 +258,12 @@ app/
   extensions.py    SQLAlchemy, Flask-Migrate, CSRF, Flask-Login
   cli.py           read-only database check
   health/          health blueprint
-  models/          Instructor and HelpSession models
+  models/          Instructor, HelpSession, StudentIdentity, QueueEntry
   auth/            forms, credential services, routes, authentication throttling
   instructor/      dashboard and session management blueprint
-  services/        session transitions and ownership queries
-  templates/       server-rendered instructor forms and dashboard
+  queue/           public Client View, browser cookie, and forms
+  services/        session/queue transitions, private state, browser identity
+  templates/       server-rendered instructor and student views
 migrations/        Alembic configuration and versioned schema
 tests/             foundation, authentication, session, database, and migration tests
 compose.yaml       local development and test PostgreSQL servers

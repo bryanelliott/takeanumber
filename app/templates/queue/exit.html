@@ -1,0 +1,6 @@
+{% extends 'queue/base.html' %}
+{% block content %}
+  <h2>You have exited the active view</h2>
+  <p>Any queue request has been left unchanged. You can close this tab.</p>
+  <a class="action" href="{{ url_for('queue.client', public_code=state.public_code) }}">Return to session</a>
+{% endblock %}

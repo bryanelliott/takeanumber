@@ -219,6 +219,11 @@ cancelled_by_session_end   # optional; evaluate before implementation
 
 Do not over-model states prematurely. If session-end cancellation is not analytically useful, waiting entries may remain `waiting` with the ended session indicating they were never served, or use an explicit terminal status. Decide before schema migration and document the choice.
 
+Milestone 3 chooses to retain unfinished entries as `waiting` when a session ends;
+the parent session's ended state closes participation. No cancellation status or
+synthetic completion/leave timestamp is added. Every new join initially waits;
+explicit instructor advancement is deferred to Milestone 4.
+
 Recommended session statuses:
 
 ```text
@@ -349,6 +354,26 @@ This identifier:
 - may be cleared or changed by the user
 
 Never use browser fingerprinting techniques.
+
+Milestone 3 uses a signed HttpOnly `tan_browser` cookie scoped to `/session`,
+containing a random 256-bit token. Only its SHA-256 hash is persisted, and the
+identity row is created on a successful join. The cookie is independent of the
+instructor authentication session, with SameSite=Lax and the configured Secure
+flag. Its configurable default lifetime is 180 days and renews on Client View GET.
+
+Forms bind to the browser cookie that rendered them; a missing, invalid, expired,
+or changed cookie cannot silently create an identity on POST. The user must reopen
+the Client View. Simultaneous first page loads before any cookie is established
+can generate different tokens; stale forms are rejected rather than joined under
+the wrong token. Clearing cookies or using another browser can still create a new
+profile, and shared browsers share a profile. Optional names never merge profiles.
+
+Queue services lock the session before identity/entry writes, using the same lock
+as End Session. A join allocates its number and inserts its entry in one transaction;
+duplicate joins return the existing active entry without changing its name or
+number. Leave targets the rendered entry UUID as well as session and browser hash.
+Client snapshots use a shared session lock to read a consistent position and never
+expose another browser's records. Exit performs only this read.
 
 ## 16. Authentication and authorization
 

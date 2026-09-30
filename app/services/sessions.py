@@ -92,10 +92,10 @@ def end_session(instructor_id, public_code):
 
 
 def session_for_join(public_code):
-    """Lock and validate a session inside the caller's future join transaction.
+    """Lock and validate a session inside the caller's queue transaction.
 
-    Never commits: a future QueueService must insert the entry before committing
-    this same transaction, or roll back on failure. No student joins exist yet.
+    Never commits: the queue service must mutate entries before committing
+    this same transaction, or roll back on failure.
     """
     help_session = db.session.scalar(
         db.select(HelpSession)

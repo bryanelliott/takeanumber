@@ -30,6 +30,7 @@ class Config:
             "SESSION_COOKIE_SECURE": secure == "true",
             "AUTH_RATE_LIMIT": positive_integer("AUTH_RATE_LIMIT", 20),
             "AUTH_RATE_WINDOW_SECONDS": positive_integer("AUTH_RATE_WINDOW_SECONDS", 900),
+            "STUDENT_COOKIE_MAX_AGE": positive_integer("STUDENT_COOKIE_MAX_AGE", 15552000),
         }
 
 

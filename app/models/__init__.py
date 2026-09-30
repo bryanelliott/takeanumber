@@ -2,5 +2,7 @@
 
 from app.models.help_session import HelpSession
 from app.models.instructor import Instructor
+from app.models.queue_entry import QueueEntry
+from app.models.student_identity import StudentIdentity
 
-__all__ = ["HelpSession", "Instructor"]
+__all__ = ["HelpSession", "Instructor", "QueueEntry", "StudentIdentity"]

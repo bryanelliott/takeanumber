@@ -103,10 +103,11 @@ Implemented lifecycle details:
   ended sessions require `ended_at >= started_at`.
 - End locks the session row and changes the state only once. Retrying preserves
   the original end timestamp. Ownership is checked before reading or ending it.
-- `next_queue_number` starts at 1; number allocation and queue entries are deferred.
+- `next_queue_number` starts at 1 and is advanced only for a new queue entry in the
+  same transaction as its insertion, while holding the session row lock.
 - `session_for_join(public_code)` locks and checks current state without committing.
-  A future join service must insert its queue entry in that same transaction and
-  commit or roll back. Missing/ended sessions are rejected; no join endpoint exists yet.
+  The queue service inserts or leaves its entry in that same transaction and
+  commits or rolls back. Missing/ended sessions are rejected.
 
 ## 4. StudentIdentity
 
@@ -129,7 +130,12 @@ Important:
 - Do not attach location data.
 - A browser identity is not proof of a human identity.
 
-Exact token-storage mechanics should be chosen during implementation.
+Milestone 3 stores a unique SHA-256 hash of a random 256-bit browser token. The raw
+token exists only in the signed HttpOnly browser cookie, never in the database or
+URLs. `first_seen_at`/`created_at` record the first successful join; `last_seen_at`
+updates on successful join attempts and actual leaves, not passive page reads.
+The token hash is nullable so an approved future retention policy can unlink the
+browser while preserving referenced history. No automatic retention runs yet.
 
 ## 5. QueueEntry
 
@@ -187,6 +193,20 @@ WHERE status IN ('waiting', 'serving')
 ```
 
 If Flask-Migrate autogeneration does not produce the desired partial index correctly, write the migration explicitly and test it.
+
+Milestone 3 explicitly creates `uq_queue_entry_active_identity` on
+`(session_id, student_identity_id)` for `waiting` and `serving` in migration
+`0003_student_queue`. `uq_queue_entry_session_number` prevents reusing any number,
+including historical entries. Foreign keys restrict deletion of referenced
+sessions/identities. Names are optional, trimmed, limited to 100 characters, and
+stored only on the request. Blank names become NULL.
+
+Timestamp constraints enforce the shapes of waiting, serving, completed, and
+left records. Milestone 3 implements only joining (waiting) and leaving (left).
+Serving/completed fields preserve the schema needed by the next milestone, but
+there are no advancement endpoints. A leave retains the request, its number,
+join timestamp, optional name, and any existing service-start timestamp. Ended
+sessions retain unfinished entries without fabricating service or leave times.
 
 ## 6. PushSubscription
 

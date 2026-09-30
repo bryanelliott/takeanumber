@@ -1,0 +1,40 @@
+{% extends 'queue/base.html' %}
+{% block content %}
+  <p>Help session with {{ state.instructor_name }}</p>
+  {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+  {% if state.status == 'ended' %}
+    <h2>Session ended</h2>
+    <p>This session no longer accepts requests.</p>
+    {% if state.queue_number %}<p>Your request number was {{ state.queue_number }}.</p>{% endif %}
+  {% elif state.status in ('waiting', 'serving') %}
+    <p>Your number</p>
+    <p class="number">{{ state.queue_number }}</p>
+    <h2>{{ 'Currently serving' if state.status == 'serving' else 'Waiting for help' }}</h2>
+    {% if state.display_name %}<p>Name: {{ state.display_name }}</p>{% endif %}
+    <p>People ahead: {{ state.people_ahead }}</p>
+    <p>Estimated wait: not available yet.</p>
+    <form method="post" action="{{ url_for('queue.leave', public_code=state.public_code) }}">
+      {{ leave_form.hidden_tag() }}
+      {{ leave_form.submit() }}
+    </form>
+  {% else %}
+    {% if state.status == 'left' %}<h2>You left the queue</h2>{% endif %}
+    {% if state.status == 'completed' %}<h2>Your request is complete</h2>{% endif %}
+    <form method="post" action="{{ url_for('queue.join', public_code=state.public_code) }}">
+      {{ join_form.hidden_tag() }}
+      {{ join_form.display_name.label }}
+      {{ join_form.display_name(maxlength=100, autocomplete='off', aria_describedby='name-help') }}
+      <p id="name-help">You can leave this blank.</p>
+      {% for errors in join_form.errors.values() %}
+        {% for message in errors %}<p role="alert">{{ message }}</p>{% endfor %}
+      {% endfor %}
+      {{ join_form.submit() }}
+    </form>
+  {% endif %}
+  <p><a class="action" href="{{ url_for('queue.client', public_code=state.public_code) }}">Refresh status</a></p>
+  <p><a class="action" href="{{ url_for('queue.exit_view', public_code=state.public_code) }}">Exit</a></p>
+  <p>Exit keeps your request in the queue. Leave Queue removes it.</p>
+  <p>No account is needed. Your place is saved in this browser using cookies.
+     Clearing cookies or changing browsers can lose access to a request.
+     People sharing a browser share its queue request.</p>
+{% endblock %}

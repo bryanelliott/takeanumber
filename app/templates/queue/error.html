@@ -1,0 +1,8 @@
+{% extends 'queue/base.html' %}
+{% block content %}
+  <h2>Unable to open this request</h2>
+  <p role="alert">{{ message }}</p>
+  {% if public_code %}
+    <a class="action" href="{{ url_for('queue.client', public_code=public_code) }}">Reopen session</a>
+  {% endif %}
+{% endblock %}

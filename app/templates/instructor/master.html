@@ -6,7 +6,8 @@
   <p>Started: <time datetime="{{ help_session.started_at.isoformat() }}">{{ help_session.started_at.strftime('%Y-%m-%d %H:%M:%S %Z') }}</time></p>
   {% if help_session.status == 'active' %}
     <h2>Session active</h2>
-    <p>Student joining and queue controls are not available yet.</p>
+    <p><a href="{{ url_for('queue.client', public_code=help_session.public_code) }}">Open student Client View</a></p>
+    <p>Share the Client View link with students. Instructor queue advancement is not available yet.</p>
     <form action="{{ url_for('instructor.end_session', public_code=help_session.public_code) }}" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit">End session</button>
