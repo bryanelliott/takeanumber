@@ -1,0 +1,9 @@
+{% macro field(input, autocomplete) %}
+  <p>
+    {{ input.label }}<br>
+    {{ input(autocomplete=autocomplete, aria_describedby=input.id ~ '-errors', aria_invalid='true' if input.errors else 'false') }}
+  </p>
+  <div id="{{ input.id }}-errors">
+    {% for error in input.errors %}<p role="alert">{{ error }}</p>{% endfor %}
+  </div>
+{% endmacro %}

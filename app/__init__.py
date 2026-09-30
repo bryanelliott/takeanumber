@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from flask import Flask
 
 from app.config import Config, configure_database
-from app.extensions import csrf, db, migrate
+from app.extensions import csrf, db, login_manager, migrate
 
 
 def create_app(config=None):
@@ -24,11 +24,23 @@ def create_app(config=None):
 
     db.init_app(app)
     migrate.init_app(app, db)
+
+    from app.auth import blueprint as auth_blueprint
+    from app.auth.rate_limit import init_auth_rate_limit
+    from app.auth.services import load_instructor
+    from app.instructor import blueprint as instructor_blueprint
+
+    # Count authentication POST attempts even when CSRF rejects the request.
+    init_auth_rate_limit(app)
     csrf.init_app(app)
+    login_manager.init_app(app)
+    login_manager.user_loader(load_instructor)
 
     from app.cli import check_db
     from app.health import blueprint
 
     app.register_blueprint(blueprint)
+    app.register_blueprint(auth_blueprint)
+    app.register_blueprint(instructor_blueprint)
     app.cli.add_command(check_db)
     return app

@@ -8,6 +8,7 @@ from sqlalchemy.exc import ArgumentError
 
 class Config:
     TESTING = False
+    MAX_CONTENT_LENGTH = 64 * 1024
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
@@ -27,7 +28,19 @@ class Config:
             "DATABASE_URL": os.getenv("DATABASE_URL"),
             "TEST_DATABASE_URL": os.getenv("TEST_DATABASE_URL"),
             "SESSION_COOKIE_SECURE": secure == "true",
+            "AUTH_RATE_LIMIT": positive_integer("AUTH_RATE_LIMIT", 20),
+            "AUTH_RATE_WINDOW_SECONDS": positive_integer("AUTH_RATE_WINDOW_SECONDS", 900),
         }
+
+
+def positive_integer(name, default):
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        raise ValueError(f"{name} must be a positive integer.") from None
+    if value < 1:
+        raise ValueError(f"{name} must be a positive integer.")
+    return value
 
 
 def postgres_url(value, setting):
