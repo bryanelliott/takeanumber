@@ -3,5 +3,15 @@
 {% block content %}
   <h1>Instructor dashboard</h1>
   <p>Welcome, {{ current_user.display_name }}.</p>
-  <p>Your instructor account is ready. Help sessions are coming in a later update.</p>
+  {% if active_session %}
+    <h2>Active help session</h2>
+    <p>Session code: {{ active_session.public_code }}</p>
+    <a href="{{ url_for('instructor.master', public_code=active_session.public_code) }}">Open Master View</a>
+  {% else %}
+    <p>No active help session.</p>
+    <form action="{{ url_for('instructor.start_session') }}" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit">Start help session</button>
+    </form>
+  {% endif %}
 {% endblock %}

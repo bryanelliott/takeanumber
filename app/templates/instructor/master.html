@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}Master View — Take A Number{% endblock %}
+{% block content %}
+  <h1>Master View</h1>
+  <p>Session code: {{ help_session.public_code }}</p>
+  <p>Started: <time datetime="{{ help_session.started_at.isoformat() }}">{{ help_session.started_at.strftime('%Y-%m-%d %H:%M:%S %Z') }}</time></p>
+  {% if help_session.status == 'active' %}
+    <h2>Session active</h2>
+    <p>Student joining and queue controls are not available yet.</p>
+    <form action="{{ url_for('instructor.end_session', public_code=help_session.public_code) }}" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit">End session</button>
+    </form>
+    <p>Reload this page to see changes made in another browser.</p>
+  {% else %}
+    <h2>Session ended</h2>
+    <p>Ended: <time datetime="{{ help_session.ended_at.isoformat() }}">{{ help_session.ended_at.strftime('%Y-%m-%d %H:%M:%S %Z') }}</time></p>
+  {% endif %}
+  <p><a href="{{ url_for('instructor.dashboard') }}">Back to dashboard</a></p>
+{% endblock %}

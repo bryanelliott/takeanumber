@@ -89,7 +89,24 @@ Business rule:
 
 - Prefer at most one active session per instructor.
 
-This may be enforced through application logic initially or a PostgreSQL partial unique index if desired and well-tested.
+Milestone 2 enforces this with the PostgreSQL partial unique index
+`uq_help_session_active_instructor` on `instructor_id` where `status = 'active'`.
+The start-session service also locks the instructor row: concurrent or repeated
+starts return the same active session. Starting after it ends creates a new record.
+
+Implemented lifecycle details:
+
+- UUID primary key and a separate 22-character URL-safe public code generated from
+  128 random bits; codes are unique across active and ended sessions.
+- The instructor foreign key restricts deletion, preserving session history.
+- Status is restricted to `active` or `ended`. Active sessions have no `ended_at`;
+  ended sessions require `ended_at >= started_at`.
+- End locks the session row and changes the state only once. Retrying preserves
+  the original end timestamp. Ownership is checked before reading or ending it.
+- `next_queue_number` starts at 1; number allocation and queue entries are deferred.
+- `session_for_join(public_code)` locks and checks current state without committing.
+  A future join service must insert its queue entry in that same transaction and
+  commit or roll back. Missing/ended sessions are rejected; no join endpoint exists yet.
 
 ## 4. StudentIdentity
 

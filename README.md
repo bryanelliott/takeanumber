@@ -1,8 +1,8 @@
 # Take A Number
 
 A Flask/PostgreSQL application for student help queues in college labs.
-Milestones 0–1 provide the Flask/PostgreSQL foundation and instructor sign-up,
-login, logout, and a protected dashboard placeholder. Help sessions and queues
+Milestones 0–2 provide the Flask/PostgreSQL foundation, instructor authentication,
+and instructor-owned help sessions with a Master View placeholder. Student queues
 follow in later milestones; see `docs/implementation-plan.md`.
 
 ## Local setup (Windows PowerShell)
@@ -51,6 +51,38 @@ at `/auth/login`. `/instructor/dashboard` requires login; logout uses a CSRF-pro
 POST form. Students do not sign up. Sign-up is self-service; email ownership and
 institutional affiliation are not verified in this milestone. Password recovery,
 SSO, administrator roles, and student authentication are not implemented.
+
+## Instructor help sessions
+
+From the dashboard, select **Start help session** to open its Master View. An
+active session replaces the start control with **Open Master View**. Use **End
+session** in the Master View to close it; the ended view remains accessible to
+its owner and shows the end timestamp. Return to the dashboard to start another.
+
+- `POST /instructor/sessions` starts a session or opens the existing active one.
+- `GET /instructor/sessions/<public_code>/master` displays the owner-only Master View.
+- `POST /instructor/sessions/<public_code>/end` ends that session once.
+
+Both mutations require login and CSRF. The authenticated instructor determines
+ownership; submitted instructor IDs are ignored. Missing sessions and another
+instructor's sessions both return 404. Public codes are opaque 128-bit random
+values, separate from internal UUIDs, and do not grant management access.
+
+A PostgreSQL partial unique index permits only one active session per instructor.
+The service locks the instructor row during Start, so simultaneous requests return
+the same active session. End locks its session row; repeated or concurrent calls
+preserve the first `ended_at` and retain the historical record. An old End request
+cannot affect a newly started session. Database constraints also enforce valid
+statuses and consistent timestamps. Session deletion is not offered.
+
+`app/services/sessions.py` exposes `session_for_join(public_code)` for future joins.
+It rejects missing or ended sessions and retains a row lock until the caller's
+transaction ends. A future queue service must check and insert in that same
+transaction to avoid racing End. The `accepts_joins` model property alone is only
+a state snapshot, not permission to insert later.
+
+Student joining, queue controls, QR codes, alerts, and real-time broadcasts are
+deferred. Multiple Master View browsers read the same database state when reloaded.
 
 ## Instructor authentication policy
 
@@ -125,9 +157,11 @@ database is disposable. The integration tests verify the actual connected databa
 and role. Missing configuration or unavailable PostgreSQL fails tests rather than
 silently skipping them. Non-loopback CI database support is deferred.
 
-Authentication tests verify the actual database and role, apply Alembic migrations
-only to the dedicated test database, and clean instructor rows between tests. A
-migration test downgrades to base and upgrades again on that disposable database.
+Integration tests verify the actual database and role, apply Alembic migrations
+only to the dedicated test database, and clean help sessions before instructor
+rows between tests. Migration tests downgrade to base or the previous milestone
+and upgrade again on that disposable database, including preservation of existing
+instructor accounts across the HelpSession migration.
 Tests do not call `create_all` or `drop_all`. Do not run parallel test processes
 against this single test database.
 
@@ -137,6 +171,11 @@ against this single test database.
 UUID primary key, normalized unique email, required display name/hash, active flag,
 and UTC-aware creation/update timestamps. ORM updates refresh `updated_at`.
 
+`migrations/versions/0002_help_session_create_help_session.py` adds `help_session`
+with its instructor foreign key, unique public code, one-active-session index,
+and status/timestamp/counter constraints. Apply it using `db upgrade` before
+opening the dashboard after updating from Milestone 1.
+
 ```powershell
 flask --app app:create_app db upgrade
 flask --app app:create_app db current
@@ -145,7 +184,8 @@ flask --app app:create_app db migrate -m "describe the schema change"
 ```
 
 The initial migration's downgrade removes the instructor table and its account
-data. The automated downgrade test runs only on the dedicated test database.
+data. Downgrading Milestone 2 to Milestone 1 removes session records but preserves
+instructors. Automated downgrade tests run only on the dedicated test database.
 
 ## Stop and reset local databases
 
@@ -171,12 +211,13 @@ app/
   extensions.py    SQLAlchemy, Flask-Migrate, CSRF, Flask-Login
   cli.py           read-only database check
   health/          health blueprint
-  models/          Instructor model
+  models/          Instructor and HelpSession models
   auth/            forms, credential services, routes, authentication throttling
-  instructor/      protected dashboard blueprint
+  instructor/      dashboard and session management blueprint
+  services/        session transitions and ownership queries
   templates/       server-rendered instructor forms and dashboard
 migrations/        Alembic configuration and versioned schema
-tests/             foundation, authentication, database, and migration tests
+tests/             foundation, authentication, session, database, and migration tests
 compose.yaml       local development and test PostgreSQL servers
 pyproject.toml     pytest and Ruff settings
 ```

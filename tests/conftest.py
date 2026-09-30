@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from app import create_app
 from app.extensions import db
-from app.models import Instructor
+from app.models import HelpSession, Instructor
 
 MIGRATIONS = str(Path(__file__).resolve().parents[1] / "migrations")
 
@@ -50,11 +50,13 @@ def client(app):
 def auth_db(app, migrated_schema):
     # Only the already-validated dedicated test database is modified here.
     with app.app_context():
+        db.session.execute(db.delete(HelpSession))
         db.session.execute(db.delete(Instructor))
         db.session.commit()
     yield
     with app.app_context():
         db.session.rollback()
+        db.session.execute(db.delete(HelpSession))
         db.session.execute(db.delete(Instructor))
         db.session.commit()
 
