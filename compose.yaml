@@ -1,0 +1,38 @@
+name: takeanumber
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: takeanumber_dev
+      POSTGRES_USER: takeanumber_dev
+      POSTGRES_PASSWORD: local_dev_only
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - dev-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U takeanumber_dev -d takeanumber_dev"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  test-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: takeanumber_test
+      POSTGRES_USER: takeanumber_test
+      POSTGRES_PASSWORD: local_test_only
+    ports:
+      - "127.0.0.1:55433:5432"
+    # Disposable test data; never mount the development volume here.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U takeanumber_test -d takeanumber_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  dev-postgres:

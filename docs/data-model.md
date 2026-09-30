@@ -1,0 +1,272 @@
+# Take A Number — Initial Data Model
+
+This document is a design target, not permission to implement every table immediately.
+
+Use UUID primary keys unless there is a strong documented reason not to.
+
+## 1. Instructor
+
+Represents an authenticated faculty account.
+
+Suggested fields:
+
+```text
+id                  UUID PK
+email               VARCHAR / CITEXT-like semantics if practical
+display_name        VARCHAR
+password_hash       VARCHAR
+is_active           BOOLEAN
+created_at          TIMESTAMPTZ
+updated_at          TIMESTAMPTZ
+```
+
+Constraints:
+
+- email unique
+- email required
+- password_hash required
+- display_name required
+
+Indexes:
+
+- unique email
+
+## 2. InstructorSetting
+
+One-to-one settings record.
+
+Suggested fields:
+
+```text
+id                          UUID PK
+instructor_id               UUID FK -> instructor.id, unique
+alert_next_enabled          BOOLEAN
+alert_serving_enabled       BOOLEAN
+visual_alert_enabled        BOOLEAN
+sound_alert_enabled         BOOLEAN
+vibration_enabled           BOOLEAN
+push_enabled                BOOLEAN
+advance_warning_count       INTEGER
+created_at                  TIMESTAMPTZ
+updated_at                  TIMESTAMPTZ
+```
+
+Initial default:
+
+```text
+advance_warning_count = 1
+```
+
+Settings can be introduced after core queue functionality if desired.
+
+## 3. HelpSession
+
+Represents one instructor's lab queue session.
+
+Suggested fields:
+
+```text
+id                  UUID PK
+instructor_id       UUID FK -> instructor.id
+public_code         VARCHAR
+status              VARCHAR or enum-like constrained value
+started_at          TIMESTAMPTZ
+ended_at            TIMESTAMPTZ nullable
+next_queue_number   INTEGER
+created_at          TIMESTAMPTZ
+updated_at          TIMESTAMPTZ
+```
+
+Constraints:
+
+- public_code unique
+- instructor_id required
+- status required
+- started_at required
+- next_queue_number >= 1
+
+Business rule:
+
+- Prefer at most one active session per instructor.
+
+This may be enforced through application logic initially or a PostgreSQL partial unique index if desired and well-tested.
+
+## 4. StudentIdentity
+
+Represents a pseudonymous browser/device profile, not a verified person.
+
+Suggested fields:
+
+```text
+id                  UUID PK
+public_token_hash   VARCHAR or BYTEA
+first_seen_at       TIMESTAMPTZ
+last_seen_at        TIMESTAMPTZ
+created_at          TIMESTAMPTZ
+```
+
+Important:
+
+- Do not store an unnecessary raw secret token if a hash will serve the lookup design.
+- Do not fingerprint the browser.
+- Do not attach location data.
+- A browser identity is not proof of a human identity.
+
+Exact token-storage mechanics should be chosen during implementation.
+
+## 5. QueueEntry
+
+Represents one request for help in one session.
+
+Suggested fields:
+
+```text
+id                  UUID PK
+session_id          UUID FK -> help_session.id
+student_identity_id UUID FK -> student_identity.id
+queue_number        INTEGER
+display_name        VARCHAR nullable
+status              VARCHAR or constrained value
+joined_at           TIMESTAMPTZ
+service_started_at  TIMESTAMPTZ nullable
+completed_at        TIMESTAMPTZ nullable
+left_at             TIMESTAMPTZ nullable
+created_at          TIMESTAMPTZ
+updated_at          TIMESTAMPTZ
+```
+
+Recommended statuses:
+
+```text
+waiting
+serving
+completed
+left
+```
+
+Potential future status:
+
+```text
+cancelled
+```
+
+Constraints:
+
+- session_id required
+- student_identity_id required
+- queue_number required
+- joined_at required
+- unique `(session_id, queue_number)`
+
+Critical invariant:
+
+A student identity may have at most one active queue entry per session.
+
+Because "active" spans selected statuses, PostgreSQL partial unique indexes may be appropriate:
+
+```text
+UNIQUE(session_id, student_identity_id)
+WHERE status IN ('waiting', 'serving')
+```
+
+If Flask-Migrate autogeneration does not produce the desired partial index correctly, write the migration explicitly and test it.
+
+## 6. PushSubscription
+
+Future table for web push.
+
+Suggested fields:
+
+```text
+id                  UUID PK
+student_identity_id UUID FK -> student_identity.id
+endpoint_hash       VARCHAR
+endpoint            TEXT
+p256dh               TEXT
+auth                 TEXT
+created_at           TIMESTAMPTZ
+updated_at           TIMESTAMPTZ
+revoked_at           TIMESTAMPTZ nullable
+```
+
+Treat subscription fields as sensitive application data.
+
+Do not implement until push notification work begins.
+
+## 7. Relationships
+
+```text
+Instructor
+  1
+  |
+  +----< HelpSession
+  |
+  +----1 InstructorSetting
+
+StudentIdentity
+  1
+  |
+  +----< QueueEntry >----1 HelpSession
+```
+
+## 8. Time handling
+
+Use timezone-aware timestamps.
+
+Store UTC in PostgreSQL via `TIMESTAMPTZ`.
+
+Convert to local display time only in the presentation layer.
+
+## 9. Derived metrics
+
+Do not initially store:
+
+- help duration
+- wait duration
+- average help time
+- average wait time
+
+Derive:
+
+```text
+help_duration = completed_at - service_started_at
+wait_duration = service_started_at - joined_at
+```
+
+Only completed/valid records should participate in relevant calculations.
+
+## 10. Help-frequency metrics
+
+Frequency by browser identity:
+
+```text
+COUNT(queue_entry.id)
+GROUP BY student_identity_id
+```
+
+Frequency by entered name must be interpreted cautiously because:
+
+- names may be blank
+- names may differ in spelling/case
+- multiple students may share a name
+- a student may use multiple devices
+
+Do not merge identities automatically based solely on name.
+
+## 11. Queue ordering
+
+Queue order should be determined by queue sequence/number and active status, not by mutable client state.
+
+The session's next queue number should be allocated atomically to avoid duplicates.
+
+## 12. Deletion and retention
+
+Do not implement destructive retention behavior until retention requirements are explicitly approved.
+
+However, the schema should not prevent future cleanup of:
+
+- student-entered names
+- pseudonymous identity records
+- push subscriptions
+
+Historical aggregate reporting requirements should be considered before deletion policies are added.

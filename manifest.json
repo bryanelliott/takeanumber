@@ -1,0 +1,27 @@
+{
+  "project": "Take A Number",
+  "purpose": "Codex starter artifacts",
+  "files": [
+    "AGENTS.md",
+    "README-CODEX-START-HERE.md",
+    "docs/architecture.md",
+    "docs/data-model.md",
+    "docs/implementation-plan.md",
+    "docs/requirements.md",
+    "docs/ui-states.md",
+    "prompts/00-audit-repo.md",
+    "prompts/01-foundation.md",
+    "prompts/02-auth.md",
+    "prompts/03-sessions.md",
+    "prompts/04-student-queue.md",
+    "prompts/05-master-queue.md",
+    "prompts/06-realtime.md",
+    "prompts/07-wait-time.md",
+    "prompts/08-alerts.md",
+    "prompts/09-settings.md",
+    "prompts/10-metrics.md",
+    "prompts/11-ci-azure.md"
+  ],
+  "recommended_first_prompt": "prompts/00-audit-repo.md",
+  "recommended_first_implementation_prompt": "prompts/01-foundation.md"
+}
