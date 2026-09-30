@@ -202,9 +202,18 @@ sessions/identities. Names are optional, trimmed, limited to 100 characters, and
 stored only on the request. Blank names become NULL.
 
 Timestamp constraints enforce the shapes of waiting, serving, completed, and
-left records. Milestone 3 implements only joining (waiting) and leaving (left).
-Serving/completed fields preserve the schema needed by the next milestone, but
-there are no advancement endpoints. A leave retains the request, its number,
+left records. Milestone 4 adds the explicit partial unique index
+`uq_queue_entry_serving_session` on `session_id` where `status = 'serving'`, in
+migration `0004_queue_advancement`. This permits at most one serving entry per
+session; it does not alter session-scoped queue numbers or existing history.
+The migration fails if pre-existing data violates that invariant, rather than
+silently choosing which request should be served. Downgrade only removes the index.
+
+Serve next changes the first waiting entry to serving and records its start.
+Done changes the displayed serving entry to completed with `completed_at` and
+promotes the next waiting entry, sharing the same transition timestamp. Repeated
+or stale submissions cannot overwrite timestamps or complete the successor.
+A leave retains the request, its number,
 join timestamp, optional name, and any existing service-start timestamp. Ended
 sessions retain unfinished entries without fabricating service or leave times.
 

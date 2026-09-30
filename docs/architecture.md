@@ -219,10 +219,29 @@ cancelled_by_session_end   # optional; evaluate before implementation
 
 Do not over-model states prematurely. If session-end cancellation is not analytically useful, waiting entries may remain `waiting` with the ended session indicating they were never served, or use an explicit terminal status. Decide before schema migration and document the choice.
 
-Milestone 3 chooses to retain unfinished entries as `waiting` when a session ends;
+Unfinished entries retain their `waiting` or `serving` state when a session ends;
 the parent session's ended state closes participation. No cancellation status or
 synthetic completion/leave timestamp is added. Every new join initially waits;
-explicit instructor advancement is deferred to Milestone 4.
+Milestone 4 explicitly begins service with Serve next when nobody is serving.
+Done completes the displayed serving request and starts the first waiting one
+atomically, or leaves the queue idle if nobody is waiting. Done without a matching
+serving request is a no-op. If a serving request leaves, the next request waits for
+Serve next. No synthetic completion is recorded when a session ends.
+
+`app/services/queue.py` is the QueueService module. Advancement checks ownership,
+locks the session row before querying entries, and commits completion and promotion
+together. Both Serve next and Done carry the displayed entry UUID; stale or repeated
+forms cannot act on its successor. A partial unique index independently restricts
+each session to one serving entry. Completion is flushed before promotion to release
+that index slot, with both writes still in the same transaction. One database wall
+timestamp, obtained after acquiring the lock, records completion and the next start.
+
+Master View reads use a shared session lock to capture a consistent, ownership-scoped
+snapshot: serving, the first five waiting requests, and the full waiting count.
+Snapshots contain numbers and optional names, never browser tokens or hashes. Live
+updates remain Milestone 5. QR images are generated locally as SVG by the existing
+`qrcode` dependency; the encoded URL is Flask's external public Client View URL for
+the requested session. The QR endpoint requires the owner and an active session.
 
 Recommended session statuses:
 

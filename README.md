@@ -1,9 +1,9 @@
 # Take A Number
 
 A Flask/PostgreSQL application for student help queues in college labs.
-Milestones 0–3 provide the Flask/PostgreSQL foundation, instructor authentication,
-help sessions, and public student queue joining/leaving. Instructor advancement
-and real-time updates follow in later milestones; see `docs/implementation-plan.md`.
+Milestones 0–4 provide the Flask/PostgreSQL foundation, instructor authentication,
+help sessions, public student queue joining/leaving, and Master View advancement.
+Real-time updates follow in Milestone 5; see `docs/implementation-plan.md`.
 
 ## Local setup (Windows PowerShell)
 
@@ -62,8 +62,12 @@ its owner and shows the end timestamp. Return to the dashboard to start another.
 - `POST /instructor/sessions` starts a session or opens the existing active one.
 - `GET /instructor/sessions/<public_code>/master` displays the owner-only Master View.
 - `POST /instructor/sessions/<public_code>/end` ends that session once.
+- `POST /instructor/sessions/<public_code>/serve-next` starts the displayed Next Up.
+- `POST /instructor/sessions/<public_code>/done` completes the displayed serving request
+  and starts the next waiting request.
+- `GET /instructor/sessions/<public_code>/qr.svg` generates its public Client View QR.
 
-Both mutations require login and CSRF. The authenticated instructor determines
+All mutations require login and CSRF. The authenticated instructor determines
 ownership; submitted instructor IDs are ignored. Missing sessions and another
 instructor's sessions both return 404. Public codes are opaque 128-bit random
 values, separate from internal UUIDs, and do not grant management access.
@@ -81,8 +85,33 @@ transaction ends. The queue service checks and inserts in that same
 transaction to avoid racing End. The `accepts_joins` model property alone is only
 a state snapshot, not permission to insert later.
 
-Instructor advancement, QR codes, alerts, wait estimates, and real-time broadcasts
-are deferred. Multiple Master View browsers read the same database state when reloaded.
+## Master View (Milestone 4)
+
+The Master View shows Currently Serving, Next Up, the first five waiting requests
+(including Next Up), and the full waiting count, excluding the serving request.
+Queue numbers and optional names appear on this instructor-controlled display.
+Names are HTML-escaped; browser identifiers and hashes are never displayed.
+
+All requests initially wait. If nobody is serving, **Serve next** begins the first
+waiting request. **Done** completes the displayed request and starts the next in
+one transaction, or leaves nobody serving if the queue is empty. Done without a
+current request changes nothing. A serving request that leaves is not completed;
+the instructor uses Serve next to resume. Stale/repeated controls target their
+original request and cannot accidentally complete its successor.
+
+Join, Leave, Serve next, Done, and End share a session row lock. PostgreSQL also
+enforces at most one serving request per session. Completion and the next service
+start share a UTC database timestamp obtained after locking. Multiple Master View
+browsers read consistent database snapshots when reloaded; use **Refresh queue**.
+Alerts, wait estimates, and real-time broadcasts remain deferred.
+
+The QR encodes the same absolute public URL as **Open student Client View**. It is
+generated locally as SVG using the existing `qrcode` dependency. Open the Master
+View using an address students can reach: a QR containing `127.0.0.1` or `localhost`
+will not reach the instructor's computer from their phones. For local phone testing
+on a trusted network, run `flask --app app:create_app run --host=0.0.0.0` without
+debug mode and open the Master View using that computer's reachable hostname/IP
+and port. Reverse-proxy URL handling remains part of future deployment work.
 
 ## Student queue (Milestone 3)
 
@@ -92,8 +121,8 @@ Students can optionally enter a name and select **Take A Number**, refresh their
 number and people-ahead count, **Leave Queue**, or **Exit** to a passive page.
 Exit leaves requests unchanged; Return to session restores the current state.
 
-All new requests wait, including the first. Instructor service advancement is
-not implemented yet. Names are optional and not used to identify or merge people.
+All new requests wait, including the first, until instructor advancement.
+Names are optional and not used to identify or merge people.
 Each browser sees only its own request. No location, seat/workstation information,
 geolocation APIs, or browser fingerprinting is used by the student feature.
 
@@ -118,7 +147,7 @@ Leave records a timestamp and retains history. It targets a specific entry, so
 replaying an old Leave after rejoining cannot remove the new request.
 
 Ending a session blocks joins/leaves and hides participation controls. Unfinished
-records remain waiting under the ended session, preserving their actual history.
+records remain waiting or serving under the ended session, preserving their actual history.
 The public page shows the ended state on refresh; there are no live broadcasts.
 
 Cookie expiry is separate from database retention. Names and token hashes are
@@ -220,6 +249,12 @@ opening the dashboard after updating from Milestone 1.
 `migrations/versions/0003_student_queue_create_student_identity_and_queue_entry.py`
 adds browser identities and historical queue entries, including the explicit
 active-entry partial unique index. Run `db upgrade` before opening the Client View.
+
+`migrations/versions/0004_queue_advancement_one_serving_per_session.py` adds the
+partial unique index allowing only one serving entry per session. Run `db upgrade`
+before using the Milestone 4 Master View. Its downgrade removes only that index,
+preserving all requests and timestamps. Existing invalid multiple-serving data
+causes upgrade to fail rather than silently rewriting history.
 
 ```powershell
 flask --app app:create_app db upgrade

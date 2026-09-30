@@ -12,6 +12,12 @@ class QueueEntry(db.Model):
     __table_args__ = (
         db.UniqueConstraint("session_id", "queue_number", name="uq_queue_entry_session_number"),
         db.Index(
+            "uq_queue_entry_serving_session",
+            "session_id",
+            unique=True,
+            postgresql_where=db.text("status = 'serving'"),
+        ),
+        db.Index(
             "uq_queue_entry_active_identity",
             "session_id",
             "student_identity_id",

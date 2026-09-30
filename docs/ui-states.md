@@ -13,6 +13,7 @@ Display:
 - no one currently serving
 - no one next
 - queue empty
+- no Serve next or Done control
 - End Session enabled
 
 ### Active, waiting students, nobody serving yet
@@ -20,12 +21,16 @@ Display:
 Display:
 
 - no one currently serving
-- first waiting student as Next Up or provide a Start/Serve action depending on final queue semantics
+- first waiting request as Next Up
+- Serve next starts that request; Done is hidden until somebody is serving
 
-Milestone 3 choice: every join creates a `waiting` request, including the first
-request. Becoming first in line does not automatically begin service. Instructor
-advancement will explicitly begin service in Milestone 4; its controls are not
-part of Milestone 3.
+Every join creates a `waiting` request, including the first request. Becoming
+first in line does not automatically begin service. Milestone 4 uses a single
+**Serve next** action when nobody is serving. It starts the first waiting request
+and records `service_started_at`. It does not complete anything. If that request
+left after the page loaded, the action changes nothing and refreshes the view.
+The same behavior applies if the currently served request leaves voluntarily:
+the instructor explicitly selects Serve next again.
 
 ### Active, serving
 
@@ -38,6 +43,23 @@ Display:
 - Done
 - End Session
 
+Done completes the request displayed as Currently Serving and starts the first
+waiting request in the same transaction. With no waiting requests, it leaves
+nobody serving. Done submitted with nobody serving changes nothing; it never
+acts as Serve next. Repeated or stale controls cannot complete a different
+request. Each action targets the entry shown when the form was rendered.
+
+Total waiting excludes Currently Serving, completed, and left requests. Next Up
+is the lowest waiting queue number. The truncated list shows the first five
+waiting requests, including Next Up, and states how many are shown out of the
+total. Optional entered names accompany queue numbers and are HTML-escaped.
+Names on the Master View may be visible on the instructor's classroom display.
+
+Milestone 4 reads a consistent database snapshot on each load and after each
+action. Refresh queue loads changes from other browsers. Automatic synchronization
+is deferred to Milestone 5. The active view includes a prominent QR code and the
+equivalent public Client View link; neither contains an instructor credential.
+
 ### Ended
 
 Display:
@@ -45,6 +67,9 @@ Display:
 - session ended
 - historical summary link
 - no queue mutation controls
+
+Historical summaries remain deferred to Milestone 9; the current ended view
+shows the end time and a dashboard link. It hides the QR and live queue panels.
 
 ## Client View states
 
@@ -105,7 +130,7 @@ Display:
 - no Take A Number action
 - no stale wait estimate
 
-Milestone 3 preserves unfinished `waiting` records when the session ends. The
+Unfinished `waiting` and `serving` records are preserved when the session ends. The
 ended session makes those records inactive for participation, and the Client View
 shows only the ended state with no join/leave controls. It does not claim that a
 request was completed or voluntarily left.

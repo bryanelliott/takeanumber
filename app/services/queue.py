@@ -1,6 +1,7 @@
-"""Server-authoritative joining, leaving, and private Client View state."""
+"""Atomic queue transitions and ownership-scoped Master/Client View snapshots."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from app.extensions import db
@@ -11,6 +12,142 @@ from app.services import sessions, student_identity
 
 class EntryNotFound(LookupError):
     pass
+
+
+MASTER_QUEUE_LIMIT = 5
+
+
+@dataclass(frozen=True)
+class MasterEntry:
+    id: UUID
+    queue_number: int
+    display_name: str | None
+
+
+@dataclass(frozen=True)
+class MasterState:
+    public_code: str
+    status: str
+    started_at: datetime
+    ended_at: datetime | None
+    serving: MasterEntry | None
+    waiting: tuple[MasterEntry, ...]
+    waiting_count: int
+
+    @property
+    def next_up(self):
+        return self.waiting[0] if self.waiting else None
+
+
+def _entry_snapshot(entry):
+    return MasterEntry(entry.id, entry.queue_number, entry.display_name) if entry else None
+
+
+def master_state(instructor_id, public_code):
+    """Read one ownership-scoped snapshot while excluding concurrent mutations."""
+    try:
+        help_session = db.session.scalar(
+            db.select(HelpSession)
+            .where(
+                HelpSession.instructor_id == instructor_id,
+                HelpSession.public_code == public_code,
+            )
+            .with_for_update(read=True)
+            .execution_options(populate_existing=True)
+        )
+        if help_session is None:
+            raise sessions.SessionNotFound()
+        serving, waiting, count = None, (), 0
+        if help_session.status == "active":
+            serving = _entry_snapshot(_serving_entry(help_session.id))
+            waiting_query = db.select(QueueEntry).where(
+                QueueEntry.session_id == help_session.id, QueueEntry.status == "waiting"
+            )
+            waiting = tuple(
+                _entry_snapshot(entry)
+                for entry in db.session.scalars(
+                    waiting_query.order_by(QueueEntry.queue_number)
+                    .limit(MASTER_QUEUE_LIMIT)
+                    .execution_options(populate_existing=True)
+                )
+            )
+            count = db.session.scalar(
+                db.select(db.func.count()).select_from(waiting_query.subquery())
+            )
+        state = MasterState(
+            help_session.public_code,
+            help_session.status,
+            help_session.started_at,
+            help_session.ended_at,
+            serving,
+            waiting,
+            count,
+        )
+        db.session.commit()
+        return state
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+def _serving_entry(session_id):
+    return db.session.execute(
+        db.select(QueueEntry)
+        .where(QueueEntry.session_id == session_id, QueueEntry.status == "serving")
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+
+
+def begin_serving(instructor_id, public_code, entry_id):
+    """Start the displayed Next Up only when nobody is serving."""
+    return _advance(instructor_id, public_code, entry_id, complete=False)
+
+
+def complete_current(instructor_id, public_code, entry_id):
+    """Complete the displayed current request and start the next, atomically."""
+    return _advance(instructor_id, public_code, entry_id, complete=True)
+
+
+def _advance(instructor_id, public_code, entry_id, *, complete):
+    try:
+        help_session = sessions.owned_session(instructor_id, public_code, lock=True)
+        if help_session.status != "active":
+            raise sessions.SessionEnded()
+        try:
+            target_id = UUID(str(entry_id))
+        except (ValueError, TypeError):
+            raise EntryNotFound() from None
+        serving = _serving_entry(help_session.id)
+        next_entry = db.session.scalar(
+            db.select(QueueEntry)
+            .where(QueueEntry.session_id == help_session.id, QueueEntry.status == "waiting")
+            .order_by(QueueEntry.queue_number)
+            .limit(1)
+            .execution_options(populate_existing=True)
+        )
+        if complete:
+            applicable = serving is not None and serving.id == target_id
+        else:
+            applicable = serving is None and next_entry is not None and next_entry.id == target_id
+        if not applicable:
+            # A stale form or double click must never complete a different request.
+            db.session.commit()
+            return False
+        # Read wall time after acquiring the lock, not transaction-start time.
+        transitioned_at = db.session.scalar(db.select(db.func.clock_timestamp()))
+        if complete:
+            serving.status = "completed"
+            serving.completed_at = transitioned_at
+            # Release the partial unique index slot before promoting the next row.
+            db.session.flush()
+        if next_entry is not None:
+            next_entry.status = "serving"
+            next_entry.service_started_at = transitioned_at
+        db.session.commit()
+        return True
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 @dataclass(frozen=True)

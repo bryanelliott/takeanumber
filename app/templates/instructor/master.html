@@ -1,21 +1,88 @@
 {% extends 'base.html' %}
 {% block title %}Master View — Take A Number{% endblock %}
+{% block head %}
+  <style>
+    body { font: 1.15rem system-ui, sans-serif; margin: 1.5rem auto; max-width: 80rem; padding: 0 1rem; }
+    nav { display: flex; align-items: center; gap: 1rem; }
+    button, .refresh { font: inherit; min-height: 44px; padding: .6rem 1rem; }
+    .master { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 2rem; }
+    .number { font-size: clamp(2.5rem, 7vw, 5rem); margin: .3rem 0; font-weight: bold; }
+    .name, .join-url { overflow-wrap: anywhere; }
+    .qr { display: block; width: 100%; max-width: 24rem; height: auto; background: white; }
+    .done { font-size: 1.5rem; font-weight: bold; }
+    li { margin: .7rem 0; }
+    @media (max-width: 700px) { .master { grid-template-columns: 1fr; } }
+  </style>
+{% endblock %}
+{% macro entry_label(entry) %}
+  <span>Number {{ entry.queue_number }}</span>{% if entry.display_name %} <span class="name">— {{ entry.display_name }}</span>{% endif %}
+{% endmacro %}
 {% block content %}
   <h1>Master View</h1>
-  <p>Session code: {{ help_session.public_code }}</p>
-  <p>Started: <time datetime="{{ help_session.started_at.isoformat() }}">{{ help_session.started_at.strftime('%Y-%m-%d %H:%M:%S %Z') }}</time></p>
-  {% if help_session.status == 'active' %}
+  <p>Session code: {{ state.public_code }}</p>
+  <p>Started: <time datetime="{{ state.started_at.isoformat() }}">{{ state.started_at.strftime('%Y-%m-%d %H:%M:%S %Z') }}</time></p>
+  {% if state.status == 'active' %}
     <h2>Session active</h2>
-    <p><a href="{{ url_for('queue.client', public_code=help_session.public_code) }}">Open student Client View</a></p>
-    <p>Share the Client View link with students. Instructor queue advancement is not available yet.</p>
-    <form action="{{ url_for('instructor.end_session', public_code=help_session.public_code) }}" method="post">
+    <div class="master">
+      <div>
+        <section aria-labelledby="serving-heading">
+          <h2 id="serving-heading">Currently Serving</h2>
+          {% if state.serving %}
+            <p class="number">Number {{ state.serving.queue_number }}</p>
+            {% if state.serving.display_name %}<p class="name">{{ state.serving.display_name }}</p>{% endif %}
+            <form action="{{ url_for('instructor.done', public_code=state.public_code) }}" method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="entry_id" value="{{ state.serving.id }}">
+              <button class="done" type="submit">Done</button>
+            </form>
+          {% else %}
+            <p>No one currently serving.</p>
+          {% endif %}
+        </section>
+        <section aria-labelledby="next-heading">
+          <h2 id="next-heading">Next Up</h2>
+          {% if state.next_up %}
+            <p>{{ entry_label(state.next_up) }}</p>
+            {% if not state.serving %}
+              <form action="{{ url_for('instructor.serve_next', public_code=state.public_code) }}" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="entry_id" value="{{ state.next_up.id }}">
+                <button class="done" type="submit">Serve next</button>
+              </form>
+              <p>Select Serve next when you are ready to begin helping.</p>
+            {% endif %}
+          {% else %}
+            <p>No one next.</p>
+          {% endif %}
+        </section>
+        <section aria-labelledby="queue-heading">
+          <h2 id="queue-heading">Waiting queue</h2>
+          <p>Total waiting: {{ state.waiting_count }}</p>
+          {% if state.waiting %}
+            <p>Showing {{ state.waiting|length }} of {{ state.waiting_count }} waiting, including Next Up.</p>
+            <ol>{% for entry in state.waiting %}<li>{{ entry_label(entry) }}</li>{% endfor %}</ol>
+          {% else %}
+            <p>Queue empty.</p>
+          {% endif %}
+        </section>
+      </div>
+      <section aria-labelledby="join-heading">
+        <h2 id="join-heading">Join this help session</h2>
+        <img class="qr" width="384" height="384" src="{{ url_for('instructor.session_qr', public_code=state.public_code) }}" alt="QR code linking to this session's student Client View">
+        <p><a href="{{ client_url }}">Open student Client View</a></p>
+        <p class="join-url">{{ client_url }}</p>
+      </section>
+    </div>
+    <p><a class="refresh" href="{{ url_for('instructor.master', public_code=state.public_code) }}">Refresh queue</a></p>
+    <p>Reload this page to see changes made in another browser. Live updates are not available yet.</p>
+    <form action="{{ url_for('instructor.end_session', public_code=state.public_code) }}" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit">End session</button>
     </form>
-    <p>Reload this page to see changes made in another browser.</p>
   {% else %}
     <h2>Session ended</h2>
-    <p>Ended: <time datetime="{{ help_session.ended_at.isoformat() }}">{{ help_session.ended_at.strftime('%Y-%m-%d %H:%M:%S %Z') }}</time></p>
+    <p>Ended: <time datetime="{{ state.ended_at.isoformat() }}">{{ state.ended_at.strftime('%Y-%m-%d %H:%M:%S %Z') }}</time></p>
+    <p>Unfinished requests are preserved in session history. Historical summaries are not available yet.</p>
   {% endif %}
   <p><a href="{{ url_for('instructor.dashboard') }}">Back to dashboard</a></p>
 {% endblock %}

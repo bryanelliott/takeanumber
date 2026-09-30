@@ -7,10 +7,34 @@ from sqlalchemy import inspect, text
 
 from app.auth.services import register_instructor
 from app.extensions import db
-from app.models import HelpSession, Instructor
-from app.services import sessions
+from app.models import HelpSession, Instructor, QueueEntry
+from app.services import queue, sessions, student_identity
 
 MIGRATIONS = str(Path(__file__).resolve().parents[1] / "migrations")
+
+
+def test_serving_index_migration_preserves_requests(app, queue_session):
+    with app.app_context():
+        entry = queue.join(queue_session[1], student_identity.new_token(), "Preserved name")
+        entry_id = entry.id
+        queue.begin_serving(*queue_session, entry_id)
+        joined, started = entry.joined_at, entry.service_started_at
+        db.session.remove()
+        try:
+            downgrade(directory=MIGRATIONS, revision="0003_student_queue")
+            indexes = {index["name"] for index in inspect(db.engine).get_indexes("queue_entry")}
+            assert "uq_queue_entry_serving_session" not in indexes
+            saved = db.session.get(QueueEntry, entry_id)
+            assert saved.status == "serving" and saved.display_name == "Preserved name"
+            assert (saved.joined_at, saved.service_started_at) == (joined, started)
+            db.session.remove()
+            upgrade(directory=MIGRATIONS)
+            indexes = {index["name"] for index in inspect(db.engine).get_indexes("queue_entry")}
+            assert "uq_queue_entry_serving_session" in indexes
+            assert db.session.get(QueueEntry, entry_id).service_started_at == started
+        finally:
+            db.session.remove()
+            upgrade(directory=MIGRATIONS)
 
 
 def test_initial_migration_downgrade_upgrade_and_model_match(migrated_schema):
@@ -26,7 +50,7 @@ def test_initial_migration_downgrade_upgrade_and_model_match(migrated_schema):
             upgrade(directory=MIGRATIONS)
         with db.engine.connect() as connection:
             assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-                "0003_student_queue"
+                "0004_queue_advancement"
             )
             context = MigrationContext.configure(connection, opts={"compare_server_default": True})
             assert compare_metadata(context, db.metadata) == []
