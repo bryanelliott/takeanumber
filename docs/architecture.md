@@ -238,8 +238,8 @@ timestamp, obtained after acquiring the lock, records completion and the next st
 
 Master View reads use a shared session lock to capture a consistent, ownership-scoped
 snapshot: serving, the first five waiting requests, and the full waiting count.
-Snapshots contain numbers and optional names, never browser tokens or hashes. Live
-updates remain Milestone 5. QR images are generated locally as SVG by the existing
+Snapshots contain numbers and optional names, never browser tokens or hashes.
+Milestone 5 refreshes these snapshots after socket notices. QR images are generated locally as SVG by the existing
 `qrcode` dependency; the encoded URL is Flask's external public Client View URL for
 the requested session. The QR endpoint requires the owner and an active session.
 
@@ -256,17 +256,51 @@ The database is authoritative.
 
 Socket.IO broadcasts should be emitted after successful database commits.
 
-Suggested room structure:
+Milestone 5 room structure:
 
 ```text
-session:{public_session_id}
-master:{session_id}     # optional
-client:{queue_entry_id} # optional for targeted alerts
+session:{public_code}   # guest Client Views; notice only
+master:{public_code}    # authenticated owner; notice only
 ```
 
 At minimum, joining a public session room allows queue updates to be broadcast efficiently.
 
 Do not rely on in-memory Python state for the queue.
+
+Each factory creates an independent Socket.IO server, stored in
+`app.extensions['socketio']`, using threading and same-origin transport defaults.
+The connection handshake validates CSRF explicitly (Flask before-request hooks do
+not run for sockets), validates the public code, and checks ownership for a Master
+View. Connections subscribe to exactly one server-chosen room. There are no room
+switching, queue mutation, or arbitrary relay event handlers.
+
+Join, Leave, Serve next, Done, and End call `publish_queue_changed` only after a
+successful commit, and only for actual queue transitions. The emitted
+`queue_changed` payload is `{}`. It carries no private data, not even an entry ID.
+All clients in that session reconcile by fetching their view's HTML fragment over
+HTTP with current cookies. Master fragments recheck Flask-Login and ownership;
+Client fragments resolve only the signed browser cookie. Cookie scope stays
+`/session`; it is neither needed nor sent to the default `/socket.io` path. No
+browser token is copied into socket auth or JavaScript. Templates escape names.
+HTTP fragments are never cached. Existing socket membership after logout cannot
+reveal instructor data because the subsequent HTTP read is unauthorized.
+
+State reads retain the existing shared session lock and return consistent database
+snapshots. The browser serializes fetches, coalesces notices during a pending read,
+and discards a superseded response. There is no client-side authoritative queue or
+socket snapshot ordering problem. Connection/reconnection, tab visibility, and a
+30-second reconciliation trigger fresh reads. Optional name drafts survive updates.
+Authorization/cookie errors clear the stale view and stop updates. HTTP actions
+remain CSRF-protected and work without JavaScript. Exit opens no socket and closing
+or losing a socket never mutates participation.
+
+Broadcast failures are logged without sensitive exception contents and never
+change an already committed result. Notices are best effort: periodic reads and
+reconnects recover failures or the commit-to-broadcast process-crash window. A
+durable outbox/event log is not part of this milestone. No schema change is needed.
+
+The browser client is pinned and served locally, avoiding runtime third-party
+requests. See `app/static/vendor/README.md` for provenance and license.
 
 ## 10. Initial worker model
 

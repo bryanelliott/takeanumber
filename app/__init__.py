@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from flask import Flask
 
 from app.config import Config, configure_database
-from app.extensions import csrf, db, login_manager, migrate
+from app.extensions import csrf, db, init_socketio, login_manager, migrate
 
 
 def create_app(config=None):
@@ -45,4 +45,5 @@ def create_app(config=None):
     app.register_blueprint(instructor_blueprint)
     app.register_blueprint(queue_blueprint)
     app.cli.add_command(check_db)
+    init_socketio(app)
     return app

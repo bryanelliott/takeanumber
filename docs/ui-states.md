@@ -55,9 +55,9 @@ waiting requests, including Next Up, and states how many are shown out of the
 total. Optional entered names accompany queue numbers and are HTML-escaped.
 Names on the Master View may be visible on the instructor's classroom display.
 
-Milestone 4 reads a consistent database snapshot on each load and after each
-action. Refresh queue loads changes from other browsers. Automatic synchronization
-is deferred to Milestone 5. The active view includes a prominent QR code and the
+Milestone 5 reads a consistent database snapshot on each load, after each action,
+and automatically when notified of committed changes in another browser. Refresh
+queue remains available. The active view includes a prominent QR code and the
 equivalent public Client View link; neither contains an instructor credential.
 
 ### Ended
@@ -92,9 +92,9 @@ Display:
 - Leave Queue
 - Exit
 
-Milestone 3 shows queue number, people ahead, and waiting state. Estimated wait
-is explicitly unavailable until Milestone 6. Refresh status reloads server state;
-there are no Socket.IO updates or automatic alerts yet. Only this browser's name
+The Client View shows queue number, people ahead, and current state. Estimated wait
+is explicitly unavailable until Milestone 6. Milestone 5 updates this state live;
+Refresh status remains available. Sound/vibration/push alerts are deferred. Only this browser's name
 and request are visible, never another browser's request or entered name.
 
 ### Next Up
@@ -142,6 +142,17 @@ change queue entries, identity timestamps, or the browser cookie. Returning with
 the cookie intact restores the current request. Leave Queue is a separate POST
 that records `left_at` and retains the historical request. Rejoining gets a new
 number; repeating an old Leave cannot remove the new request.
+
+## Connection state (Milestone 5)
+
+Master and Client Views show live connection status. They fetch current state on
+connection/reconnection, when a tab becomes visible, and every 30 seconds as a
+fallback. Notices contain no queue details; each view fetches only authorized
+server-rendered state. Updates preserve an optional name being typed. Lost access
+or a missing/expired browser cookie clears the stale view and asks for a reload.
+Session End automatically shows the ended state and removes queue controls.
+Closing the page or losing a connection never invokes Leave Queue. With JavaScript
+disabled, all ordinary forms and manual refresh continue to work.
 
 ## Accessibility notes
 

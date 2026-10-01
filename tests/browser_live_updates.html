@@ -1,0 +1,81 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Live update browser checks</title>
+<div id="live-state"><input id="display_name" name="display_name"></div>
+<p id="live-status"></p>
+<div id="live-config" data-view="client" data-public-code="example"
+     data-state-url="/test-state" data-socket-path="/socket.io" data-csrf-token="initial"></div>
+<script>
+  const handlers = {};
+  const requests = [];
+  let periodic;
+  window.setInterval = (callback) => { periodic = callback; return 1; };
+  const socket = {
+    connected: false, active: false, connects: 0,
+    on(name, callback) { handlers[name] = callback; },
+    connect() { this.active = true; this.connects += 1; },
+    disconnect() { this.connected = false; this.active = false; handlers.disconnect?.(); },
+  };
+  window.io = (options) => { socket.options = options; return socket; };
+  window.fetch = (url, options) => new Promise((resolve) => requests.push({url, options, resolve}));
+</script>
+<script src="../app/static/live-updates.js"></script>
+<script>
+  (async () => {
+    const assert = (value, message) => { if (!value) throw new Error(message); };
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const state = (text) => `<div data-live-csrf="fresh"><p>${text}</p><input id="display_name" name="display_name"></div>`;
+    const respond = async (html, extra = {}) => {
+      const request = requests.shift();
+      assert(request, "expected a state fetch");
+      assert(request.url === "/test-state", "use only the configured state URL");
+      assert(request.options.credentials === "same-origin", "send current HTTP cookies");
+      assert(request.options.cache === "no-store", "do not cache private state");
+      request.resolve({ok: true, status: 200, redirected: false, text: async () => html, ...extra});
+      await tick();
+    };
+    try {
+      assert(socket.connects === 1, "subscribe on page load");
+      const name = document.querySelector("input");
+      name.value = "Name being typed";
+      name.focus();
+      name.setSelectionRange(2, 6);
+      socket.connected = true;
+      handlers.connect();
+      assert(requests.length === 1, "connect must fetch authoritative state");
+      handlers.queue_changed({html: "untrusted event data"});
+      handlers.queue_changed();
+      assert(requests.length === 1, "serialize and coalesce overlapping refreshes");
+      await respond(state("outdated response"));
+      assert(!document.getElementById("live-state").textContent.includes("outdated"), "discard stale in-flight response");
+      assert(requests.length === 1, "fetch again after an in-flight invalidation");
+      await respond(state("current response"));
+      const currentName = document.querySelector("input");
+      assert(currentName.value === "Name being typed", "preserve draft names");
+      assert(document.activeElement === currentName && currentName.selectionStart === 2, "restore input focus and selection");
+      let auth;
+      socket.options.auth((value) => { auth = value; });
+      assert(auth.csrf_token === "fresh", "reconnect uses refreshed CSRF token");
+      socket.connected = false;
+      handlers.disconnect();
+      assert(document.getElementById("live-status").textContent.includes("interrupted"), "show disconnection");
+      socket.connected = true;
+      handlers.connect();
+      await respond(state("missed changes restored"));
+      assert(document.getElementById("live-state").textContent.includes("missed changes restored"), "resync on reconnect");
+      periodic();
+      await respond(state("periodic reconciliation"));
+      handlers.queue_changed();
+      await respond("login page", {redirected: true});
+      assert(!socket.connected, "stop socket after authorization loss");
+      assert(!document.getElementById("live-state").textContent.includes("login page"), "never render redirected content");
+      assert(!document.querySelector("input"), "clear stale private view after authorization loss");
+      handlers.queue_changed();
+      assert(requests.length === 0, "no refresh after stopping");
+      document.body.dataset.result = "passed";
+    } catch (error) {
+      document.body.dataset.result = "failed";
+      document.body.append(String(error));
+    }
+  })();
+</script>

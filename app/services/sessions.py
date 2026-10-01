@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models import HelpSession, Instructor
+from app.realtime import publish_queue_changed
 
 
 class SessionNotFound(LookupError):
@@ -81,10 +82,13 @@ def end_session(instructor_id, public_code):
     """Commit the active-to-ended transition once, preserving its original time."""
     try:
         help_session = owned_session(instructor_id, public_code, lock=True)
-        if help_session.status == "active":
+        changed = help_session.status == "active"
+        if changed:
             help_session.status = "ended"
             help_session.ended_at = datetime.now(UTC)
         db.session.commit()
+        if changed:
+            publish_queue_changed(public_code)
         return help_session
     except Exception:
         db.session.rollback()

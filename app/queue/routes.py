@@ -20,12 +20,12 @@ def not_found(error):
     return render_template("queue/error.html", message="Session or request not found."), 404
 
 
-def render_client(public_code, token, *, join_form=None, error=None, status=200):
+def render_client(public_code, token, *, join_form=None, error=None, status=200, fragment=False):
     state = queue.client_state(public_code, token)
     binding = browser.form_binding(token, public_code)
     return make_response(
         render_template(
-            "queue/client.html",
+            "queue/_client_state.html" if fragment else "queue/client.html",
             state=state,
             error=error,
             join_form=join_form or JoinForm(data={"browser_binding": binding}),
@@ -50,6 +50,15 @@ def client(public_code):
     response = render_client(public_code, token)
     browser.write_cookie(response, token)
     return response
+
+
+@blueprint.get("/<public_code>/state")
+def live_state(public_code):
+    # Read the current HTTP cookie, never a browser identifier supplied over a socket.
+    token = browser.read_token()
+    if not token:
+        return browser_error(public_code)
+    return render_client(public_code, token, fragment=True)
 
 
 @blueprint.post("/<public_code>/join")

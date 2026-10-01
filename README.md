@@ -1,9 +1,9 @@
 # Take A Number
 
 A Flask/PostgreSQL application for student help queues in college labs.
-Milestones 0–4 provide the Flask/PostgreSQL foundation, instructor authentication,
-help sessions, public student queue joining/leaving, and Master View advancement.
-Real-time updates follow in Milestone 5; see `docs/implementation-plan.md`.
+Milestones 0–5 provide the Flask/PostgreSQL foundation, instructor authentication,
+help sessions, public student queue joining/leaving, Master View advancement, and
+live queue updates. See `docs/implementation-plan.md` for later milestones.
 
 ## Local setup (Windows PowerShell)
 
@@ -32,7 +32,7 @@ docker compose config --quiet
 docker compose up -d --wait db test-db
 flask --app app:create_app check-db
 flask --app app:create_app db upgrade
-flask --app app:create_app run --debug
+python run.py --debug
 ```
 
 In a second terminal:
@@ -102,14 +102,14 @@ original request and cannot accidentally complete its successor.
 Join, Leave, Serve next, Done, and End share a session row lock. PostgreSQL also
 enforces at most one serving request per session. Completion and the next service
 start share a UTC database timestamp obtained after locking. Multiple Master View
-browsers read consistent database snapshots when reloaded; use **Refresh queue**.
-Alerts, wait estimates, and real-time broadcasts remain deferred.
+browsers read consistent database snapshots and update automatically after queue
+changes. **Refresh queue** remains available. Alerts and wait estimates are deferred.
 
 The QR encodes the same absolute public URL as **Open student Client View**. It is
 generated locally as SVG using the existing `qrcode` dependency. Open the Master
 View using an address students can reach: a QR containing `127.0.0.1` or `localhost`
 will not reach the instructor's computer from their phones. For local phone testing
-on a trusted network, run `flask --app app:create_app run --host=0.0.0.0` without
+on a trusted network, run `python run.py --host=0.0.0.0` without
 debug mode and open the Master View using that computer's reachable hostname/IP
 and port. Reverse-proxy URL handling remains part of future deployment work.
 
@@ -148,10 +148,46 @@ replaying an old Leave after rejoining cannot remove the new request.
 
 Ending a session blocks joins/leaves and hides participation controls. Unfinished
 records remain waiting or serving under the ended session, preserving their actual history.
-The public page shows the ended state on refresh; there are no live broadcasts.
+Connected pages automatically show the ended state and remove mutation controls.
 
 Cookie expiry is separate from database retention. Names and token hashes are
 nullable to support future approved anonymization; no retention/deletion job runs.
+
+## Live updates (Milestone 5)
+
+Start the local server with `python run.py` (optionally `--debug`, `--host`, or
+`--port`). It uses Flask-SocketIO's `run()` entry point with threading and the
+existing `simple-websocket` dependency. This is a development server, not an Azure
+deployment configuration. Run exactly one application worker/process; there is no
+Redis, message broker, or queue stored in Python memory.
+
+After a successful Join, Leave, Serve next, Done, or End transaction, the service
+emits `queue_changed` with an empty object to that session's student and instructor
+rooms. Retries that do not change queue state emit nothing. The notice contains no
+names, queue numbers, entry IDs, browser identifiers, credentials, or instructor
+data. The browser fetches a fresh server-rendered fragment through its own HTTP
+cookies; instructor ownership and student browser identity are checked there on
+every request. This also prevents an old instructor socket from exposing private
+state after logout. Socket events cannot mutate the queue or choose arbitrary rooms.
+
+- Master state: `GET /instructor/sessions/<public_code>/state` (owner only).
+- Client state: `GET /session/<public_code>/state` (only this browser's request).
+- Socket transport: `/socket.io`, same origin, CSRF-validated subscription handshake.
+- Rooms: `master:<public_code>` for the owner; `session:<public_code>` for guests.
+
+Pages reconcile immediately on connection/reconnection and when returning to a
+visible tab. Refreshes are serialized and coalesced to avoid stale responses
+overwriting newer state; optional names being typed are preserved. A 30-second
+reconciliation also recovers missed notices or temporary socket failures. Failed
+broadcasts cannot roll back a committed request. Notifications are best effort,
+not a durable event log. Connection status and manual refresh remain available.
+Without JavaScript, ordinary forms and manual refresh still work. Exit is passive:
+disconnecting never leaves the queue, and the Exit page opens no socket.
+
+The Socket.IO 4.8.1 browser client is vendored locally under `app/static/vendor/`
+with its MIT license and source/hash notes. No runtime CDN or Node build is needed;
+`requirements.txt` is unchanged. No schema changes or migration are required.
+Sound, vibration, push notifications, and wait estimates remain later milestones.
 
 ## Instructor authentication policy
 
@@ -206,6 +242,12 @@ pytest
 # Optional coverage report:
 pytest --cov=app --cov-report=term-missing
 ```
+
+Socket.IO tests cover room isolation, ownership, CSRF/origin rejection, minimal
+payloads, commit-before-notify, rollback, reconnects, and private state responses.
+If Chrome, Chromium, or Edge is installed, pytest also runs an isolated headless
+DOM test for draft preservation, reconnects, and overlapping refreshes. That one
+optional test skips when no supported browser is available.
 
 Tests explicitly create the app with `TESTING=True`. Before any database engine
 is initialized, the factory requires a `TEST_DATABASE_URL` with a loopback host,
@@ -291,6 +333,7 @@ app/
   __init__.py       application factory
   config.py        environment settings and database guards
   extensions.py    SQLAlchemy, Flask-Migrate, CSRF, Flask-Login
+  realtime.py      Socket.IO room subscriptions and post-commit notices
   cli.py           read-only database check
   health/          health blueprint
   models/          Instructor, HelpSession, StudentIdentity, QueueEntry
@@ -299,6 +342,8 @@ app/
   queue/           public Client View, browser cookie, and forms
   services/        session/queue transitions, private state, browser identity
   templates/       server-rendered instructor and student views
+  static/          focused live-update JavaScript and vendored Socket.IO client
+run.py             local single-process Socket.IO server
 migrations/        Alembic configuration and versioned schema
 tests/             foundation, authentication, session, database, and migration tests
 compose.yaml       local development and test PostgreSQL servers

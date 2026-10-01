@@ -7,6 +7,7 @@ from uuid import UUID
 from app.extensions import db
 from app.models import HelpSession, Instructor, QueueEntry
 from app.models.queue_entry import ACTIVE_STATUSES
+from app.realtime import publish_queue_changed
 from app.services import sessions, student_identity
 
 
@@ -144,6 +145,7 @@ def _advance(instructor_id, public_code, entry_id, *, complete):
             next_entry.status = "serving"
             next_entry.service_started_at = transitioned_at
         db.session.commit()
+        publish_queue_changed(public_code)
         return True
     except Exception:
         db.session.rollback()
@@ -177,7 +179,8 @@ def join(public_code, token, display_name=None):
             )
             .execution_options(populate_existing=True)
         )
-        if entry is None:
+        changed = entry is None
+        if changed:
             entry = QueueEntry(
                 session_id=help_session.id,
                 student_identity_id=identity.id,
@@ -187,6 +190,8 @@ def join(public_code, token, display_name=None):
             help_session.next_queue_number += 1
             db.session.add(entry)
         db.session.commit()
+        if changed:
+            publish_queue_changed(public_code)
         return entry
     except Exception:
         db.session.rollback()
@@ -215,11 +220,14 @@ def leave(public_code, token, entry_id):
         )
         if entry is None:
             raise EntryNotFound()
-        if entry.status in ACTIVE_STATUSES:
+        changed = entry.status in ACTIVE_STATUSES
+        if changed:
             entry.status = "left"
             entry.left_at = db.func.clock_timestamp()
             identity.last_seen_at = db.func.clock_timestamp()
         db.session.commit()
+        if changed:
+            publish_queue_changed(public_code)
         return entry
     except Exception:
         db.session.rollback()

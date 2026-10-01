@@ -61,6 +61,20 @@ def session_qr(public_code):
     return Response(image.to_string(), mimetype="image/svg+xml")
 
 
+@blueprint.get("/sessions/<public_code>/state")
+@login_required
+def live_state(public_code):
+    try:
+        state = queue.master_state(current_user.id, public_code)
+    except sessions.SessionNotFound:
+        abort(404)
+    return render_template(
+        "instructor/_master_state.html",
+        state=state,
+        client_url=url_for("queue.client", public_code=public_code, _external=True),
+    )
+
+
 @blueprint.post("/sessions/<public_code>/serve-next")
 @login_required
 def serve_next(public_code):

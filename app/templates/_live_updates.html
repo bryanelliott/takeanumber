@@ -1,0 +1,10 @@
+<p id="live-status" role="status">Connecting live updates. Refresh remains available.</p>
+<noscript><p>Refresh this page to see queue changes.</p></noscript>
+<div id="live-config" hidden
+     data-view="{{ live_view }}"
+     data-public-code="{{ state.public_code }}"
+     data-state-url="{{ live_state_url }}"
+     data-socket-path="{{ request.script_root }}/socket.io"
+     data-csrf-token="{{ csrf_token() }}"></div>
+<script defer src="{{ url_for('static', filename='vendor/socket.io-4.8.1.min.js') }}"></script>
+<script defer src="{{ url_for('static', filename='live-updates.js') }}"></script>
