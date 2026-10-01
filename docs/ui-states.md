@@ -185,7 +185,8 @@ disabled, all ordinary forms and manual refresh continue to work.
 
 Visual states render on the server and work without JavaScript or media APIs.
 While participating, the page offers separate **Enable and test sound** and
-**Enable and test vibration** buttons. Both are off initially. Sound initializes
+**Enable and test vibration** buttons, subject to the instructor's settings.
+Both are off initially. Sound initializes
 or resumes its audio context only through the student's button click. Buttons
 also allow turning effects off. Missing or denied capabilities show explanatory
 text and leave all queue controls functional. A short test does not replay a
@@ -203,6 +204,29 @@ title reflects the current alert. Focus is not moved by alerts. On leave,
 completion, session end, loss of view access, or page exit, effects turn off and
 stale alert text/title are cleared. Preferences are in-page only: reload/return
 requires enabling effects again. No settings, permissions, or identifiers are
-stored for these choices. Keep the page open; background/sleeping browsers or
+stored for these student choices. Keep the page open; background/sleeping browsers or
 device settings can suppress sound/vibration. Web Push and service workers are
 not implemented in Phase 7A.
+
+## Instructor settings (Milestone 8)
+
+Instructor navigation links to **Settings**. The authenticated instructor can
+change Next Up/advance-warning alerts, Currently Serving alerts, visual emphasis,
+optional sound, optional vibration, and warning distance. Defaults enable the
+events and visual emphasis and allow student media opt-in. Web Push is explicitly
+unavailable; there is no inactive push checkbox or location setting.
+
+Warning distance accepts 1, 2, or 3 waiting requests (default 1), excluding serving,
+left, and completed requests. Only the first waiting request says **You're next**;
+other requests inside the distance say **Your turn is approaching**. With no one
+serving, the same rule applies. The instructor must still select Serve next.
+The Next Up toggle controls both warning kinds. Each can signal once when newly
+observed, followed by a separate Serving signal when applicable.
+
+Disabling an event or visual emphasis removes its alert styling; plain Next Up
+and Currently Serving text, position, estimates, and queue controls remain. Visual
+emphasis controls tab titles and polite alert announcements too. Media toggles
+disable student enable/test buttons with an explanation; enabling a toggle never
+enables media automatically. Active pages refresh after a settings save, without
+sounding for the settings edit itself or replaying an old alert. Changes apply to
+current and future sessions. Validation failures display errors without saving.

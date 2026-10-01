@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.extensions import db
-from app.models import Instructor
+from app.models import Instructor, InstructorSetting
 from app.models.instructor import PASSWORD_METHOD, normalize_email
 
 # Unknown emails still incur a password check. This value never represents an account.
@@ -22,6 +22,8 @@ def register_instructor(email, display_name, password):
     instructor.set_password(password)
     db.session.add(instructor)
     try:
+        db.session.flush()
+        db.session.add(InstructorSetting(instructor_id=instructor.id))
         db.session.commit()
     except IntegrityError as error:
         db.session.rollback()

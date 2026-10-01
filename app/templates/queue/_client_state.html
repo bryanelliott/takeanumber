@@ -1,5 +1,13 @@
+{% set alerts_allowed = state.preferences.alert_next_enabled or state.preferences.alert_serving_enabled %}
+{% set alert_enabled = state.preferences.permits(state.alert_state) %}
+{% set emphasize = alert_enabled and state.preferences.visual_alert_enabled %}
 <div data-live-csrf="{{ csrf_token() }}" data-client-status="{{ state.status }}"
-     data-entry-id="{{ state.entry_id or '' }}" data-alert-state="{{ state.alert_state or '' }}">
+     data-entry-id="{{ state.entry_id or '' }}" data-alert-state="{{ state.alert_state or '' }}"
+     data-alert-enabled="{{ 'true' if alert_enabled else 'false' }}"
+     data-visual-enabled="{{ 'true' if state.preferences.visual_alert_enabled else 'false' }}"
+     data-sound-allowed="{{ 'true' if alerts_allowed and state.preferences.sound_alert_enabled else 'false' }}"
+     data-vibration-allowed="{{ 'true' if alerts_allowed and state.preferences.vibration_enabled else 'false' }}"
+     data-alert-policy="{{ state.preferences.policy_key }}">
   <p>Help session with {{ state.instructor_name }}</p>
   {% if error %}<p role="alert">{{ error }}</p>{% endif %}
   {% if state.status == 'ended' %}
@@ -10,14 +18,20 @@
     <p>Your number</p>
     <p class="number">{{ state.queue_number }}</p>
     {% if state.alert_state == 'serving' %}
-      <section class="student-alert serving-alert" aria-labelledby="student-alert-heading" data-alert-message>
+      <section{% if emphasize %} class="student-alert serving-alert"{% endif %} aria-labelledby="student-alert-heading" data-alert-message>
         <h2 id="student-alert-heading"><span aria-hidden="true">&#10003;</span> It's your turn</h2>
         <p>Currently serving: number {{ state.queue_number }}.</p>
       </section>
     {% elif state.alert_state == 'next_up' %}
-      <section class="student-alert next-alert" aria-labelledby="student-alert-heading" data-alert-message>
+      <section{% if emphasize %} class="student-alert next-alert"{% endif %} aria-labelledby="student-alert-heading" data-alert-message>
         <h2 id="student-alert-heading"><span aria-hidden="true">&#8594;</span> You're next</h2>
         <p>Number {{ state.queue_number }} is Next Up. Wait for the instructor to begin helping you.</p>
+      </section>
+    {% elif state.alert_state == 'advance_warning' and alert_enabled %}
+      <section{% if emphasize %} class="student-alert next-alert"{% endif %} aria-labelledby="student-alert-heading" data-alert-message>
+        <h2 id="student-alert-heading"><span aria-hidden="true">&#8594;</span> Your turn is approaching</h2>
+        <p>You are among the first {{ state.preferences.advance_warning_count }} waiting requests.
+           Wait for the instructor to begin helping you.</p>
       </section>
     {% else %}
       <h2>Waiting for help</h2>

@@ -523,6 +523,38 @@ NotificationService triggers push
 
 Push notification design must be optional and must degrade gracefully.
 
+### Instructor alert policy (Milestone 8)
+
+The instructor blueprint serves a login-required, CSRF-protected settings form at
+`/instructor/settings`. The owner always comes from `current_user.id`; no route or
+form field selects another instructor. `app/services/settings.py` reads immutable
+`AlertPreferences` snapshots and atomically saves the complete preference set.
+Registration creates a settings row and migration `0005_instructor_settings`
+backfills existing accounts. Unique/FK/range constraints enforce persistence rules.
+
+Defaults preserve Phase 7A: Next Up, Serving, and visual emphasis enabled; optional
+sound and vibration allowed but off in each student browser until that student
+enables them. No push setting or delivery is added. Client snapshots read the
+session owner's current policy, so it applies to current and future sessions.
+After a settings commit, empty invalidations notify only the owner's active
+session rooms. Existing periodic/reconnect reads recover missed notices.
+
+Warning distance is the first **1–3 waiting requests**, default 1, excluding the
+serving request and left/completed entries. The first waiting request remains
+`next_up` regardless of settings. Additional waiting requests within the distance
+have presentation state `advance_warning` and see “Your turn is approaching.”
+Both warning kinds obey `alert_next_enabled`; serving obeys its separate toggle.
+This never changes stored queue states, ordering, advancement, or wait estimates.
+
+Event toggles gate effects; the visual toggle gates border/background emphasis,
+tab titles, and alert announcements. Plain queue status and controls remain visible
+with every toggle off. Sound/vibration settings only allow each browser's own
+enable/test choice. A live disabling change stops the corresponding effect; a
+reenabling change does not opt the student back in. Changes to the policy cancel
+pending audio initialization and establish a baseline without replaying effects.
+Each new advance-warning, Next Up, or Serving state can signal once per request
+on that page. Basic text remains usable without JavaScript or supported media.
+
 ## 18. Metrics architecture
 
 Prefer deriving metrics from event timestamps and queue-entry state rather than storing duplicate aggregate values.

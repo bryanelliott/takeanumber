@@ -50,9 +50,11 @@
     const vibration = document.getElementById("student-vibration");
     const target = document.getElementById("live-state");
     const announce = document.getElementById("student-announcement");
+    let policy = {};
     const update = (status, alert, entry = "first") => {
       const text = alert === "next_up" ? "You're next" : alert === "serving" ? "It's your turn" : "Waiting";
       target.innerHTML = `<div data-client-status="${status}" data-entry-id="${entry}" data-alert-state="${alert}"><h2 data-alert-message>${text}</h2></div>`;
+      Object.assign(target.firstElementChild.dataset, policy);
       document.dispatchEvent(new Event("queue:state"));
     };
     try {
@@ -118,6 +120,44 @@
         sound.click();
         update("serving", "serving", "second");
         assert(sounds === afterTest, "user can turn sound off");
+        // Instructor preferences can change while this page remains open.
+        policy = {alertPolicy: "disabled", soundAllowed: "false", vibrationAllowed: "false", alertEnabled: "false", visualEnabled: "false"};
+        update("waiting", "next_up", "third");
+        assert(sound.disabled && vibration.disabled, "instructor can disable media choices live");
+        assert(announce.textContent === "" && document.title === "Student alert checks", "visual preference clears emphasis");
+        sound.click();
+        assert(sounds === afterTest, "disabled sound cannot initialize");
+        policy = {alertPolicy: "enabled", soundAllowed: "true", vibrationAllowed: "true", alertEnabled: "true", visualEnabled: "true"};
+        update("waiting", "next_up", "third");
+        assert(!sound.disabled && sound.getAttribute("aria-pressed") === "false", "reenabling policy never opts student in");
+        sound.click();
+        await tick();
+        const afterPolicyTest = sounds;
+        update("waiting", "next_up", "third");
+        assert(sounds === afterPolicyTest, "policy edits cannot replay current alert");
+        update("serving", "serving", "third");
+        assert(sounds === afterPolicyTest + 1, "next real transition respects opt-in");
+        policy = {...policy, alertPolicy: "no-visual", visualEnabled: "false"};
+        update("waiting", "", "fourth");
+        update("waiting", "advance_warning", "fourth");
+        assert(sounds === afterPolicyTest + 2 && announce.textContent === "", "advance warning uses sound independently of visual preference");
+        update("waiting", "advance_warning", "fourth");
+        assert(sounds === afterPolicyTest + 2, "advance warning is deduplicated");
+        policy = {...policy, alertPolicy: "event-off", alertEnabled: "false"};
+        update("waiting", "", "fifth");
+        update("waiting", "next_up", "fifth");
+        assert(sounds === afterPolicyTest + 2, "disabled event cannot sound");
+        // A policy change also cancels a pending user-requested audio initialization.
+        sound.click(); // turn off
+        let finishResume;
+        context.resume = () => new Promise((resolve) => { finishResume = resolve; });
+        sound.click();
+        policy = {...policy, alertPolicy: "sound-off", soundAllowed: "false"};
+        update("waiting", "next_up", "fifth");
+        finishResume();
+        await tick();
+        assert(sound.disabled && sound.getAttribute("aria-pressed") === "false", "pending initialization cannot override instructor setting");
+        assert(sounds === afterPolicyTest + 2, "no delayed sound after policy disables it");
         target.textContent = "View unavailable";
         document.dispatchEvent(new Event("queue:state"));
         assert(announce.textContent === "", "lost access clears alert");

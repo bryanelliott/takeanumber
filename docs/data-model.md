@@ -57,7 +57,19 @@ Initial default:
 advance_warning_count = 1
 ```
 
-Settings can be introduced after core queue functionality if desired.
+Milestone 8 implements the fields above except `push_enabled`, which is deferred
+until Web Push exists. All five implemented booleans default to true. Sound and
+vibration settings permit student opt-in; they never automatically enable media.
+The warning count is non-null and constrained to integers 1–3 in PostgreSQL and
+the settings form. The instructor foreign key is non-null and unique; deletion
+of an instructor cascades to its preferences (no instructor deletion UI is added).
+
+Migration `0005_instructor_settings` backfills one default record per existing
+instructor. Registration inserts its settings in the same transaction. Reads do
+not create records; accounts provisioned outside registration use safe defaults
+until saved. Saves use an atomic PostgreSQL upsert on the unique instructor key,
+so concurrent saves cannot create duplicates. The last committed complete form
+wins. A downgrade drops only settings; instructor/session/queue history is retained.
 
 ## 3. HelpSession
 

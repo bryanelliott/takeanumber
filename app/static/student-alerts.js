@@ -18,6 +18,11 @@
   let active = false;
   let entryId = "";
   let seen = new Set();
+  let soundAllowed = false;
+  let vibrationAllowed = false;
+  let policyKey;
+  let soundPending = false;
+  let policyVersion = 0;
 
   function soundOff(message = typeof Audio === "function" ? "Sound is off." : "Sound is not supported in this browser. Visual alerts remain.") {
     soundEnabled = false;
@@ -71,9 +76,11 @@
   }
 
   soundButton.addEventListener("click", async () => {
-    if (!active) return;
+    if (!active || !soundAllowed) return;
     if (soundEnabled) { soundOff(); return; }
     const requestedEntry = entryId;
+    const requestedPolicy = policyVersion;
+    soundPending = true;
     soundButton.disabled = true;
     let timeout;
     try {
@@ -83,7 +90,7 @@
         audio.resume(),
         new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("Audio timeout")), 3000); }),
       ]);
-      if (!active || entryId !== requestedEntry) return;
+      if (!active || !soundAllowed || entryId !== requestedEntry || requestedPolicy !== policyVersion) return;
       if (playTone()) {
         soundEnabled = true;
         soundButton.setAttribute("aria-pressed", "true");
@@ -94,12 +101,13 @@
       soundOff("Sound could not start. Try Enable and test sound again; visual alerts remain.");
     } finally {
       clearTimeout(timeout);
-      soundButton.disabled = false;
+      soundPending = false;
+      soundButton.disabled = !soundAllowed || typeof Audio !== "function";
     }
   });
 
   vibrationButton.addEventListener("click", () => {
-    if (!active) return;
+    if (!active || !vibrationAllowed) return;
     if (vibrationEnabled) { vibrationOff(); return; }
     if (vibrate()) {
       vibrationEnabled = true;
@@ -122,22 +130,35 @@
     const state = target.querySelector("[data-client-status]");
     active = Boolean(state && ["waiting", "serving"].includes(state.dataset.clientStatus));
     controls.hidden = !active;
+    const nextPolicy = state?.dataset.alertPolicy || "";
+    const policyChanged = policyKey !== undefined && policyKey !== nextPolicy;
+    if (policyChanged) policyVersion += 1;
+    policyKey = nextPolicy;
+    soundAllowed = active && state.dataset.soundAllowed !== "false";
+    vibrationAllowed = active && state.dataset.vibrationAllowed !== "false";
+    if (!soundAllowed) soundOff(active ? "Sound is disabled by the instructor. Queue status remains available." : undefined);
+    if (!vibrationAllowed) vibrationOff(active ? "Vibration is disabled by the instructor. Queue status remains available." : undefined);
+    soundButton.disabled = soundPending || !soundAllowed || typeof Audio !== "function";
+    vibrationButton.disabled = !vibrationAllowed || typeof navigator.vibrate !== "function";
     const nextEntry = state?.dataset.entryId || "";
     if (nextEntry !== entryId) { entryId = nextEntry; seen = new Set(); }
     const alert = active ? state.dataset.alertState : "";
-    if (!["next_up", "serving"].includes(alert)) {
+    if (!["next_up", "serving", "advance_warning"].includes(alert)) {
       announcement.textContent = "";
       document.title = originalTitle;
       if (!active) { soundOff(); vibrationOff(); }
       return;
     }
-    document.title = `${alert === "next_up" ? "You're next" : "It's your turn"} — Take A Number`;
-    const message = target.querySelector("[data-alert-message]")?.textContent.trim() || "";
+    const enabled = state.dataset.alertEnabled !== "false";
+    const visual = enabled && state.dataset.visualEnabled !== "false";
+    const label = alert === "next_up" ? "You're next" : alert === "serving" ? "It's your turn" : "Your turn is approaching";
+    document.title = visual ? `${label} — Take A Number` : originalTitle;
+    const message = visual ? target.querySelector("[data-alert-message]")?.textContent.trim() || "" : "";
     if (announcement.textContent !== message) announcement.textContent = message;
     if (seen.has(alert)) return;
     seen.add(alert);
     // Initial render is a baseline, not a replay of an old transition.
-    if (!initial) {
+    if (!initial && !policyChanged && enabled) {
       if (soundEnabled) playTone();
       if (vibrationEnabled) vibrate();
     }

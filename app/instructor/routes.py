@@ -1,12 +1,32 @@
+from dataclasses import fields
+
 import qrcode
 from flask import Blueprint, Response, abort, flash, redirect, render_template, url_for
 from flask_login import current_user, login_required
 from qrcode.image.svg import SvgPathFillImage
 
-from app.instructor.forms import AdvanceForm
-from app.services import queue, sessions
+from app.instructor.forms import AdvanceForm, SettingsForm
+from app.services import queue, sessions, settings
 
 blueprint = Blueprint("instructor", __name__, url_prefix="/instructor")
+
+
+@blueprint.route("/settings", methods=["GET", "POST"])
+@login_required
+def preferences():
+    form = SettingsForm(obj=settings.get_preferences(current_user.id))
+    if form.validate_on_submit():
+        settings.save_preferences(
+            current_user.id,
+            settings.AlertPreferences(
+                **{field.name: form[field.name].data for field in fields(settings.AlertPreferences)}
+            ),
+        )
+        flash("Settings saved. Active student views will update automatically.")
+        return redirect(url_for("instructor.preferences"), code=303)
+    return render_template("instructor/settings.html", form=form), (
+        400 if form.is_submitted() else 200
+    )
 
 
 @blueprint.after_request

@@ -7,7 +7,7 @@ from sqlalchemy import inspect, text
 
 from app.auth.services import register_instructor
 from app.extensions import db
-from app.models import HelpSession, Instructor, QueueEntry
+from app.models import HelpSession, Instructor, InstructorSetting, QueueEntry
 from app.services import queue, sessions, student_identity
 
 MIGRATIONS = str(Path(__file__).resolve().parents[1] / "migrations")
@@ -46,11 +46,12 @@ def test_initial_migration_downgrade_upgrade_and_model_match(migrated_schema):
             assert "help_session" not in inspect(db.engine).get_table_names()
             assert "student_identity" not in inspect(db.engine).get_table_names()
             assert "queue_entry" not in inspect(db.engine).get_table_names()
+            assert "instructor_setting" not in inspect(db.engine).get_table_names()
         finally:
             upgrade(directory=MIGRATIONS)
         with db.engine.connect() as connection:
             assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-                "0004_queue_advancement"
+                "0005_instructor_settings"
             )
             context = MigrationContext.configure(connection, opts={"compare_server_default": True})
             assert compare_metadata(context, db.metadata) == []
@@ -76,6 +77,34 @@ def test_help_session_migration_preserves_instructors(migrated_schema):
             upgrade(directory=MIGRATIONS)
             db.session.execute(db.delete(Instructor).where(Instructor.id == identity))
             db.session.commit()
+
+
+def test_settings_migration_backfills_existing_accounts_and_preserves_queue(app, queue_session):
+    with app.app_context():
+        entry_id = queue.join(queue_session[1], student_identity.new_token()).id
+        db.session.remove()
+        try:
+            downgrade(directory=MIGRATIONS, revision="0004_queue_advancement")
+            assert "instructor_setting" not in inspect(db.engine).get_table_names()
+            assert db.session.get(QueueEntry, entry_id).status == "waiting"
+            db.session.remove()
+            upgrade(directory=MIGRATIONS)
+            row = db.session.scalar(
+                db.select(InstructorSetting).where(
+                    InstructorSetting.instructor_id == queue_session[0]
+                )
+            )
+            assert row.advance_warning_count == 1 and row.visual_alert_enabled
+            assert row.alert_next_enabled and row.alert_serving_enabled
+            assert row.sound_alert_enabled and row.vibration_enabled
+            row_id = row.id
+            assert db.session.get(QueueEntry, entry_id).status == "waiting"
+            db.session.remove()
+            upgrade(directory=MIGRATIONS)
+            assert db.session.get(InstructorSetting, row_id) is not None
+        finally:
+            db.session.remove()
+            upgrade(directory=MIGRATIONS)
 
 
 def test_student_queue_migration_preserves_sessions(migrated_schema):

@@ -9,6 +9,7 @@ from app.models import HelpSession, Instructor, QueueEntry
 from app.models.queue_entry import ACTIVE_STATUSES
 from app.realtime import publish_queue_changed
 from app.services import sessions, student_identity
+from app.services.settings import AlertPreferences, get_preferences
 from app.services.wait_time import WaitTimeService
 
 
@@ -164,6 +165,7 @@ class ClientState:
     people_ahead: int | None = None
     estimated_wait_minutes: int | None = None
     alert_state: str | None = None
+    preferences: AlertPreferences = AlertPreferences()
 
 
 def join(public_code, token, display_name=None):
@@ -250,6 +252,7 @@ def client_state(public_code, token=None):
         if row is None:
             raise sessions.SessionNotFound()
         help_session, instructor_name = row
+        preferences = get_preferences(help_session.instructor_id)
         identity = student_identity.find_identity(token) if token else None
         entry = None
         if identity:
@@ -283,6 +286,8 @@ def client_state(public_code, token=None):
             ).one()
             if status == "waiting" and waiting_ahead == 0:
                 alert_state = "next_up"
+            elif status == "waiting" and waiting_ahead < preferences.advance_warning_count:
+                alert_state = "advance_warning"
         state = ClientState(
             public_code,
             instructor_name,
@@ -293,6 +298,7 @@ def client_state(public_code, token=None):
             ahead,
             WaitTimeService.estimate_minutes(help_session, ahead) if status == "waiting" else None,
             alert_state,
+            preferences,
         )
         db.session.commit()
         return state

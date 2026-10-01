@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block title %}Instructor settings — Take A Number{% endblock %}
+{% block content %}
+  <h1>Student alert settings</h1>
+  <p>These preferences apply to your current and future sessions. Queue status and
+     controls always remain visible, even when alerts are off.</p>
+  <p>Sound and vibration still require each student to enable them on their page.
+     Your settings never override browser restrictions or student choices.</p>
+  <form method="post">
+    {{ form.hidden_tag() }}
+    {% for field in [form.alert_next_enabled, form.alert_serving_enabled,
+                     form.visual_alert_enabled, form.sound_alert_enabled, form.vibration_enabled] %}
+      <p>{{ field() }} {{ field.label }}</p>
+    {% endfor %}
+    <p>{{ form.advance_warning_count.label }} {{ form.advance_warning_count(aria_describedby='warning-help') }}</p>
+    <p id="warning-help">Warn the first 1–3 waiting requests. Only the first is Next Up;
+       others see “Your turn is approaching.” Currently Serving is excluded from this count.
+       Leaving or completed requests do not count. This applies when Next Up alerts are enabled.</p>
+    {% for errors in form.errors.values() %}
+      {% for error in errors %}<p role="alert">{{ error }}</p>{% endfor %}
+    {% endfor %}
+    {{ form.submit() }}
+  </form>
+  <p>Web Push is not available yet.</p>
+{% endblock %}

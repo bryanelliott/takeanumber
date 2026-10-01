@@ -1,9 +1,9 @@
 # Take A Number
 
 A Flask/PostgreSQL application for student help queues in college labs.
-Milestones 0–6 and Phase 7A provide the Flask/PostgreSQL foundation, instructor authentication,
+Milestones 0–6, Phase 7A, and Milestone 8 provide the Flask/PostgreSQL foundation, instructor authentication,
 help sessions, public student queue joining/leaving, Master View advancement, and
-live queue updates, wait-time estimates, and in-browser student alerts.
+live queue updates, wait-time estimates, in-browser student alerts, and instructor settings.
 See `docs/implementation-plan.md` for later milestones.
 
 ## Local setup (Windows PowerShell)
@@ -241,6 +241,36 @@ Run `pytest tests/test_student_alerts.py tests/test_live_browser.py` for the foc
 state, event/privacy, and browser fallback checks. Browser tests use mocked media
 APIs in an isolated headless browser; real-device volume/haptics still depend on
 the device. They skip if Chrome/Chromium/Edge is not installed.
+
+## Instructor settings (Milestone 8)
+
+Select **Settings** in instructor navigation (`/instructor/settings`). Preferences
+apply to that instructor's current and future sessions. Next Up/advance-warning,
+Serving, and visual emphasis default to enabled. Sound and vibration default to
+allowed, but each student must still enable/test them on their page.
+
+Warning distance accepts **1–3 waiting requests**, default 1; it excludes anyone
+serving and historical requests. Only the first waiting request is Next Up. Others
+within the configured distance see **Your turn is approaching**. Disabling alerts
+preserves ordinary queue status and controls. Live settings changes turn off
+disallowed effects without replaying an alert or overriding a student's opt-in.
+Push preferences are deferred until Web Push is implemented.
+
+Apply the new migration before running the updated app:
+
+```powershell
+.\.venv\Scripts\python.exe -m flask --app app:create_app db upgrade
+```
+
+Migration `0005_instructor_settings` backfills existing instructors with defaults;
+registration creates settings for new accounts. One row per instructor and warning
+count bounds are enforced by PostgreSQL. Downgrading removes preferences only.
+There are no dependency changes. Run the focused persistence, ownership, migration,
+and media checks with:
+
+```powershell
+pytest tests/test_settings.py tests/test_migrations.py tests/test_live_browser.py
+```
 
 ## Instructor authentication policy
 
