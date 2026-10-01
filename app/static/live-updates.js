@@ -42,6 +42,7 @@
     const selection = focused ? [name.selectionStart, name.selectionEnd] : null;
     if (name && replacement) replacement.value = name.value;
     target.replaceChildren(next.content);
+    document.dispatchEvent(new Event("queue:state"));
     if (focused && replacement) {
       replacement.focus({preventScroll: true});
       replacement.setSelectionRange(...selection);
@@ -66,6 +67,7 @@
           if (response.redirected || [401, 403, 404, 409].includes(response.status)) {
             stop();
             target.textContent = "This view is no longer available. Reload the page to continue.";
+            document.dispatchEvent(new Event("queue:state"));
             status.textContent = "Live updates stopped.";
             return;
           }

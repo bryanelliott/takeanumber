@@ -102,7 +102,7 @@ history yet`. With nobody ahead, display `No one ahead; waiting for the instruct
 The serving request ahead counts as one expected help; elapsed time is not
 subtracted. Estimates do not include instructor pauses and are not a countdown.
 Hide estimates outside the waiting state. Live updates recalculate the estimate;
-Refresh status remains available. Sound/vibration/push alerts are deferred. Only this browser's name
+Refresh status remains available. Phase 7A adds optional sound/vibration; Web Push remains deferred. Only this browser's name
 and request are visible, never another browser's request or entered name.
 
 ### Next Up
@@ -115,6 +115,13 @@ Display:
 - queue number
 - Leave Queue if product rules still allow it
 
+Phase 7A defines Next Up as the **first waiting request**, matching the Master
+View. This applies whether someone is serving or the instructor has not begun
+service yet. One person ahead alone does not determine Next Up: that person might
+still be waiting. Next Up remains a waiting request, with its usual estimate and
+Leave Queue action. Display a prominent `You're next` heading, arrow, dashed
+border, queue number, and reminder to wait for the instructor to begin service.
+
 ### Currently Serving
 
 Display:
@@ -122,6 +129,10 @@ Display:
 - strong "It's your turn" message
 - visual alert
 - sound/vibration when enabled and supported
+
+The serving view prominently shows `It's your turn`, a check icon, solid border,
+and `Currently serving: number N`. Leave Queue remains available under the existing
+rules. Neither alert animates or flashes; both remain static with reduced motion.
 
 ### Left Queue
 
@@ -169,3 +180,29 @@ disabled, all ordinary forms and manual refresh continue to work.
 - Avoid rapid flashing patterns that create accessibility risk.
 - Respect reduced-motion preferences where feasible.
 - Audio must not be the sole alert mechanism.
+
+## Optional in-browser alerts (Phase 7A)
+
+Visual states render on the server and work without JavaScript or media APIs.
+While participating, the page offers separate **Enable and test sound** and
+**Enable and test vibration** buttons. Both are off initially. Sound initializes
+or resumes its audio context only through the student's button click. Buttons
+also allow turning effects off. Missing or denied capabilities show explanatory
+text and leave all queue controls functional. A short test does not replay a
+previous queue transition.
+
+After a committed queue change, the existing live refresh reads authoritative
+private state. New Next Up/Serving states trigger enabled effects at most once per
+request and alert kind in that page. Repeated refreshes or reconnects do not repeat
+them. Initial page load establishes the baseline without automatic sound/vibration.
+If disconnected across several transitions, only the current state is presented;
+old alerts are not replayed. A new request can alert again.
+
+A stable polite screen-reader region announces changed alert text, and the tab
+title reflects the current alert. Focus is not moved by alerts. On leave,
+completion, session end, loss of view access, or page exit, effects turn off and
+stale alert text/title are cleared. Preferences are in-page only: reload/return
+requires enabling effects again. No settings, permissions, or identifiers are
+stored for these choices. Keep the page open; background/sleeping browsers or
+device settings can suppress sound/vibration. Web Push and service workers are
+not implemented in Phase 7A.

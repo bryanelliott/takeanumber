@@ -8,7 +8,16 @@ from pathlib import Path
 import pytest
 
 
-def test_live_update_dom_reconnect_ordering_and_drafts(tmp_path):
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "browser_live_updates.html",
+        "browser_student_alerts.html",
+        "browser_student_alerts.html#unsupported",
+        "browser_student_alerts.html#blocked",
+    ],
+)
+def test_live_browser_behavior(tmp_path, fixture_name):
     candidates = [
         shutil.which("chromium"),
         shutil.which("google-chrome"),
@@ -18,7 +27,10 @@ def test_live_update_dom_reconnect_ordering_and_drafts(tmp_path):
     browser = next((path for path in candidates if path and Path(path).is_file()), None)
     if browser is None:
         pytest.skip("Chrome/Chromium/Edge is not installed for optional DOM checks")
-    fixture = Path(__file__).with_name("browser_live_updates.html").resolve().as_uri()
+    filename, _, fragment = fixture_name.partition("#")
+    fixture = Path(__file__).with_name(filename).resolve().as_uri()
+    if fragment:
+        fixture += "#" + fragment
     result = subprocess.run(
         [
             browser,

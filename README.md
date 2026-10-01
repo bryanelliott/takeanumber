@@ -1,9 +1,10 @@
 # Take A Number
 
 A Flask/PostgreSQL application for student help queues in college labs.
-Milestones 0–6 provide the Flask/PostgreSQL foundation, instructor authentication,
+Milestones 0–6 and Phase 7A provide the Flask/PostgreSQL foundation, instructor authentication,
 help sessions, public student queue joining/leaving, Master View advancement, and
-live queue updates, and wait-time estimates. See `docs/implementation-plan.md` for later milestones.
+live queue updates, wait-time estimates, and in-browser student alerts.
+See `docs/implementation-plan.md` for later milestones.
 
 ## Local setup (Windows PowerShell)
 
@@ -103,7 +104,7 @@ Join, Leave, Serve next, Done, and End share a session row lock. PostgreSQL also
 enforces at most one serving request per session. Completion and the next service
 start share a UTC database timestamp obtained after locking. Multiple Master View
 browsers read consistent database snapshots and update automatically after queue
-changes. **Refresh queue** remains available. Student alerts are deferred.
+changes. **Refresh queue** remains available. Students can enable in-browser alerts.
 
 The QR encodes the same absolute public URL as **Open student Client View**. It is
 generated locally as SVG using the existing `qrcode` dependency. Open the Master
@@ -187,7 +188,7 @@ disconnecting never leaves the queue, and the Exit page opens no socket.
 The Socket.IO 4.8.1 browser client is vendored locally under `app/static/vendor/`
 with its MIT license and source/hash notes. No runtime CDN or Node build is needed;
 `requirements.txt` is unchanged. No schema changes or migration are required.
-Sound, vibration, and push notifications remain later milestones.
+In-browser sound/vibration are available in Phase 7A; Web Push remains deferred.
 
 ## Wait-time estimates (Milestone 6)
 
@@ -213,6 +214,33 @@ and manual refresh recalculate them from PostgreSQL; nothing derived is stored.
 The policy is intentionally fixed and simple in this milestone. See
 `docs/architecture.md` for exact boundaries. No migration or dependency changes
 are needed. Run `pytest tests/test_wait_time.py` for the focused test suite.
+
+## Student alerts (Phase 7A)
+
+The first waiting request sees **You're next**, even if the instructor has not yet
+begun serving. Once service begins it sees **It's your turn**. These are derived
+from the authoritative database snapshot, not browser guesses about queue counts.
+Static text, icons, and dashed/solid borders convey state without relying on color
+or flashing. They also work without JavaScript and under reduced-motion preferences.
+
+After joining, students may select **Enable and test sound** and/or **Enable and
+test vibration**. Each can be turned off separately. Sound initializes through this
+interaction; blocked or unsupported media shows a message while the visual state
+and queue controls remain usable. Enabled effects fire once per request's Next Up
+or Serving state on the current page. Repeated updates and reconnects do not replay
+alerts. A polite screen-reader announcement and tab title reflect changed state.
+
+Choices last only while participating on that page. Reloading or returning from
+Exit requires enabling effects again. Leaving, completing, ending the session,
+losing access, or exiting stops effects. Keep the page open: background/sleeping
+browsers, device volume, or vibration support may suppress optional effects.
+No Web Push, service workers, permission prompts, or subscription records are added.
+No location is requested. No schema or dependency changes are required.
+
+Run `pytest tests/test_student_alerts.py tests/test_live_browser.py` for the focused
+state, event/privacy, and browser fallback checks. Browser tests use mocked media
+APIs in an isolated headless browser; real-device volume/haptics still depend on
+the device. They skip if Chrome/Chromium/Edge is not installed.
 
 ## Instructor authentication policy
 

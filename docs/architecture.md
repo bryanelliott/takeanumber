@@ -482,6 +482,31 @@ Implement:
 - sound initiated after user interaction
 - vibration when supported
 
+Phase 7A implementation derives `ClientState.alert_state` inside the existing
+shared session lock. A serving entry yields `serving`; the first waiting entry
+(no lower-numbered waiting entries) yields `next_up`. Other states yield no alert,
+including unfinished entries under an ended session. Next Up is presentation
+state, not a new stored queue status. There is no migration.
+
+Socket payloads remain empty invalidation notices, sent after commit. Authorized
+HTTP fragments carry only the requesting browser's entry ID, participation state,
+and alert state. The live-update script notifies the student alert script only
+after applying a fresh fragment; the browser does not infer Next Up from counts
+or react to raw socket payloads. The alert script tracks the current request and
+already-observed alert kinds in page memory to suppress duplicate effects.
+
+Server-rendered static text, icons, and contrasting border styles supply visual
+alerts without movement/flashing, including under reduced-motion preferences.
+A persistent polite live region announces changes without moving focus. Optional
+sound and vibration each require an enable/test gesture; defaults are off and no
+preferences are persisted. Audio resume rejection, suspended contexts, missing
+APIs, vibration failure, and teardown are handled without breaking queue controls.
+No automatic audio-resume attempts occur during queue refresh. The current state
+is reconciled after reconnect, without replaying missed transitions.
+
+Implementation API references: [AudioContext.resume](https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/resume)
+and [Navigator.vibrate](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/vibrate).
+
 ### Phase 2
 
 Add Web Push:

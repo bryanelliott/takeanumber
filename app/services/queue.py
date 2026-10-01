@@ -163,6 +163,7 @@ class ClientState:
     display_name: str | None = None
     people_ahead: int | None = None
     estimated_wait_minutes: int | None = None
+    alert_state: str | None = None
 
 
 def join(public_code, token, display_name=None):
@@ -266,16 +267,22 @@ def client_state(public_code, token=None):
             "ended" if help_session.status == "ended" else (entry.status if entry else "not_joined")
         )
         ahead = None
+        alert_state = "serving" if status == "serving" else None
         if status in ACTIVE_STATUSES:
-            ahead = db.session.scalar(
-                db.select(db.func.count())
+            ahead, waiting_ahead = db.session.execute(
+                db.select(
+                    db.func.count(),
+                    db.func.count().filter(QueueEntry.status == "waiting"),
+                )
                 .select_from(QueueEntry)
                 .where(
                     QueueEntry.session_id == help_session.id,
                     QueueEntry.status.in_(ACTIVE_STATUSES),
                     QueueEntry.queue_number < entry.queue_number,
                 )
-            )
+            ).one()
+            if status == "waiting" and waiting_ahead == 0:
+                alert_state = "next_up"
         state = ClientState(
             public_code,
             instructor_name,
@@ -285,6 +292,7 @@ def client_state(public_code, token=None):
             entry.display_name if entry else None,
             ahead,
             WaitTimeService.estimate_minutes(help_session, ahead) if status == "waiting" else None,
+            alert_state,
         )
         db.session.commit()
         return state

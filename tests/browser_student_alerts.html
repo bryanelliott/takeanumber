@@ -1,0 +1,134 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Student alert checks</title>
+<div id="live-state"><div data-client-status="waiting" data-entry-id="first" data-alert-state=""></div></div>
+<p id="student-announcement" role="status"></p>
+<section id="student-alert-controls" hidden>
+  <button id="student-sound" aria-pressed="false">Enable and test sound</button>
+  <p id="student-sound-status"></p>
+  <button id="student-vibration" aria-pressed="false">Enable and test vibration</button>
+  <p id="student-vibration-status"></p>
+</section>
+<script>
+  const unsupported = location.hash === "#unsupported";
+  let resumeBlocked = location.hash === "#blocked";
+  let vibrationResult = true;
+  let sounds = 0;
+  let vibrations = 0;
+  let context;
+  const errors = [];
+  window.addEventListener("unhandledrejection", (event) => errors.push(String(event.reason)));
+  class AudioMock {
+    constructor() { this.state = "suspended"; this.currentTime = 0; context = this; }
+    resume() {
+      if (resumeBlocked) return Promise.reject(new Error("autoplay denied"));
+      this.state = "running";
+      return Promise.resolve();
+    }
+    close() { this.state = "closed"; return Promise.resolve(); }
+    createOscillator() {
+      return {frequency: {}, connect() {}, disconnect() {}, start() { sounds += 1; }, stop() { this.onended?.(); }};
+    }
+    createGain() {
+      return {gain: {setValueAtTime() {}, linearRampToValueAtTime() {}}, connect() {}, disconnect() {}};
+    }
+  }
+  window.AudioContext = unsupported ? undefined : AudioMock;
+  window.webkitAudioContext = undefined;
+  Object.defineProperty(navigator, "vibrate", {configurable: true, value: unsupported ? undefined : (duration) => {
+    if (duration > 0) vibrations += 1;
+    if (vibrationResult === "throw") throw new Error("vibration denied");
+    return vibrationResult;
+  }});
+</script>
+<script src="../app/static/student-alerts.js"></script>
+<script>
+  (async () => {
+    const assert = (value, message) => { if (!value) throw new Error(message); };
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const sound = document.getElementById("student-sound");
+    const vibration = document.getElementById("student-vibration");
+    const target = document.getElementById("live-state");
+    const announce = document.getElementById("student-announcement");
+    const update = (status, alert, entry = "first") => {
+      const text = alert === "next_up" ? "You're next" : alert === "serving" ? "It's your turn" : "Waiting";
+      target.innerHTML = `<div data-client-status="${status}" data-entry-id="${entry}" data-alert-state="${alert}"><h2 data-alert-message>${text}</h2></div>`;
+      document.dispatchEvent(new Event("queue:state"));
+    };
+    try {
+      assert(sounds === 0 && vibrations === 0, "never autoplay on initial load");
+      assert(!document.getElementById("student-alert-controls").hidden, "active request has alert choices");
+      if (unsupported) {
+        assert(sound.disabled && vibration.disabled, "unsupported controls disabled");
+        update("waiting", "next_up");
+        assert(announce.textContent === "You're next", "text alert works with no APIs");
+        update("serving", "serving");
+        assert(announce.textContent === "It's your turn", "serving text works with no APIs");
+        update("ended", "");
+        update("waiting", "", "new-request");
+        assert(document.getElementById("student-sound-status").textContent.includes("not supported"), "unsupported explanation survives later states");
+        assert(sounds === 0 && vibrations === 0, "no unavailable APIs used");
+      } else {
+        sound.click();
+        await tick();
+        if (resumeBlocked) {
+          assert(sounds === 0 && sound.getAttribute("aria-pressed") === "false", "denied autoplay stays off");
+          assert(document.getElementById("student-sound-status").textContent.includes("could not start"), "explain sound failure");
+          resumeBlocked = false;
+          sound.click();
+          await tick();
+        }
+        assert(sounds === 1 && sound.getAttribute("aria-pressed") === "true", "user gesture starts and tests sound");
+        vibration.click();
+        assert(vibrations === 1 && vibration.getAttribute("aria-pressed") === "true", "vibration is separately opt-in");
+        document.dispatchEvent(new Event("queue_changed"));
+        assert(sounds === 1, "raw notice cannot trigger alert");
+        update("waiting", "next_up");
+        assert(sounds === 2 && vibrations === 2, "next transition signals once");
+        assert(announce.textContent === "You're next" && document.title.includes("You're next"), "text and title reflect state");
+        update("waiting", "next_up");
+        assert(sounds === 2 && vibrations === 2, "refresh/reconnect does not repeat alert");
+        update("serving", "serving");
+        assert(sounds === 3 && vibrations === 3, "serving transition signals once");
+        update("serving", "serving");
+        assert(sounds === 3, "duplicate serving state silent");
+        update("ended", "");
+        assert(document.getElementById("student-alert-controls").hidden, "ended session stops controls");
+        assert(announce.textContent === "" && document.title === "Student alert checks", "ended clears stale alerts");
+        assert(sound.getAttribute("aria-pressed") === "false", "ended turns sound off");
+        update("waiting", "", "second");
+        sound.click();
+        await tick();
+        vibrationResult = false;
+        vibration.click();
+        assert(vibration.getAttribute("aria-pressed") === "false", "vibration false gracefully disables effects");
+        assert(document.getElementById("student-vibration-status").textContent.includes("unavailable"), "vibration denial explained");
+        vibrationResult = "throw";
+        vibration.click();
+        assert(vibration.getAttribute("aria-pressed") === "false", "vibration exceptions handled");
+        context.state = "suspended";
+        update("waiting", "next_up", "second");
+        assert(sound.getAttribute("aria-pressed") === "false", "interrupted audio does not autoplay resume");
+        assert(announce.textContent === "You're next", "visual state survives interrupted audio");
+        sound.click();
+        await tick();
+        const afterTest = sounds;
+        update("waiting", "next_up", "second");
+        assert(sounds === afterTest, "enabling sound never replays old transition");
+        sound.click();
+        update("serving", "serving", "second");
+        assert(sounds === afterTest, "user can turn sound off");
+        target.textContent = "View unavailable";
+        document.dispatchEvent(new Event("queue:state"));
+        assert(announce.textContent === "", "lost access clears alert");
+      }
+      window.dispatchEvent(new Event("pagehide"));
+      await tick();
+      assert(errors.length === 0, "optional API errors never escape");
+      document.body.dataset.result = "passed";
+    } catch (error) {
+      document.body.dataset.result = "failed";
+      document.body.append(String(error));
+    }
+  })();
+</script>

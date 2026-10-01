@@ -16,7 +16,7 @@ def test_public_join_refresh_leave_and_rejoin(app, client, queue_session, hidden
     fields = hidden_fields(page)
     assert client.post(path + "/join", data=fields).status_code == 303
     active = client.get(path)
-    assert "Waiting for help" in active.text and "People ahead: 0" in active.text
+    assert 'data-client-status="waiting"' in active.text and "People ahead: 0" in active.text
     assert client.post(path + "/join", data=fields).status_code == 303
     refreshed = client.get(path)
     assert hidden_fields(active)["entry_id"] == hidden_fields(refreshed)["entry_id"]
@@ -29,7 +29,7 @@ def test_public_join_refresh_leave_and_rejoin(app, client, queue_session, hidden
     assert "You left the queue" in left.text
     assert client.post(path + "/join", data=hidden_fields(left)).status_code == 303
     assert client.post(path + "/leave", data=hidden_fields(active)).status_code == 303
-    assert "Waiting for help" in client.get(path).text
+    assert 'data-client-status="waiting"' in client.get(path).text
     with app.app_context():
         entries = db.session.scalars(db.select(QueueEntry).order_by(QueueEntry.queue_number)).all()
         assert [(entry.queue_number, entry.status) for entry in entries] == [
@@ -48,7 +48,7 @@ def test_exit_is_read_only_and_return_restores_request(app, client, queue_sessio
         last_seen = identity.last_seen_at
     exited = client.get(path + "/exit")
     assert exited.status_code == 200 and "Return to session" in exited.text
-    assert "Waiting for help" in client.get(path).text
+    assert 'data-client-status="waiting"' in client.get(path).text
     with app.app_context():
         entry = db.session.scalar(db.select(QueueEntry))
         assert (entry.id, entry.status, entry.joined_at, entry.updated_at, entry.left_at) == before
@@ -77,7 +77,7 @@ def test_browser_cookie_is_separate_persistent_httponly_and_hash_not_exposed(
     reopened = app.test_client()
     reopened.set_cookie(browser.COOKIE_NAME, cookie.value, path=browser.COOKIE_PATH)
     restored = reopened.get(path)
-    assert "Waiting for help" in restored.text
+    assert 'data-client-status="waiting"' in restored.text
     assert "no-store" in restored.headers["Cache-Control"]
     assert restored.headers["Referrer-Policy"] == "no-referrer"
 
@@ -146,7 +146,7 @@ def test_cleared_cookie_does_not_claim_recovery_or_merge_by_name(
     )
     client.delete_cookie(browser.COOKIE_NAME, path=browser.COOKIE_PATH)
     page = client.get(path)
-    assert "Waiting for help" not in page.text
+    assert 'data-client-status="not_joined"' in page.text
     client.post(path + "/join", data={**hidden_fields(page), "display_name": "Same name"})
     with app.app_context():
         assert db.session.scalar(db.select(db.func.count()).select_from(StudentIdentity)) == 2
@@ -176,7 +176,7 @@ def test_no_other_browser_data_or_identity_override(app, client, queue_session, 
     assert "People ahead: 1" in other.get(path).text
     stolen_target = {**hidden_fields(other.get(path)), "entry_id": first_fields["entry_id"]}
     assert other.post(path + "/leave", data=stolen_target).status_code == 404
-    assert "Waiting for help" in client.get(path).text
+    assert 'data-client-status="waiting"' in client.get(path).text
 
 
 def test_optional_name_validation_and_escaping(client, queue_session, hidden_fields):
@@ -266,4 +266,4 @@ def test_flask_session_reset_does_not_lose_queue_identity(client, queue_session,
     client.post(path + "/join", data=hidden_fields(client.get(path)))
     with client.session_transaction() as state:
         state.clear()
-    assert "Waiting for help" in client.get(path).text
+    assert 'data-client-status="waiting"' in client.get(path).text

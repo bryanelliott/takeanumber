@@ -1,4 +1,5 @@
-<div data-live-csrf="{{ csrf_token() }}">
+<div data-live-csrf="{{ csrf_token() }}" data-client-status="{{ state.status }}"
+     data-entry-id="{{ state.entry_id or '' }}" data-alert-state="{{ state.alert_state or '' }}">
   <p>Help session with {{ state.instructor_name }}</p>
   {% if error %}<p role="alert">{{ error }}</p>{% endif %}
   {% if state.status == 'ended' %}
@@ -8,7 +9,19 @@
   {% elif state.status in ('waiting', 'serving') %}
     <p>Your number</p>
     <p class="number">{{ state.queue_number }}</p>
-    <h2>{{ 'Currently serving' if state.status == 'serving' else 'Waiting for help' }}</h2>
+    {% if state.alert_state == 'serving' %}
+      <section class="student-alert serving-alert" aria-labelledby="student-alert-heading" data-alert-message>
+        <h2 id="student-alert-heading"><span aria-hidden="true">&#10003;</span> It's your turn</h2>
+        <p>Currently serving: number {{ state.queue_number }}.</p>
+      </section>
+    {% elif state.alert_state == 'next_up' %}
+      <section class="student-alert next-alert" aria-labelledby="student-alert-heading" data-alert-message>
+        <h2 id="student-alert-heading"><span aria-hidden="true">&#8594;</span> You're next</h2>
+        <p>Number {{ state.queue_number }} is Next Up. Wait for the instructor to begin helping you.</p>
+      </section>
+    {% else %}
+      <h2>Waiting for help</h2>
+    {% endif %}
     {% if state.display_name %}<p>Name: {{ state.display_name }}</p>{% endif %}
     <p>People ahead: {{ state.people_ahead }}</p>
     {% if state.status == 'waiting' %}
