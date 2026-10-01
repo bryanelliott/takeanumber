@@ -9,6 +9,7 @@ from app.models import HelpSession, Instructor, QueueEntry
 from app.models.queue_entry import ACTIVE_STATUSES
 from app.realtime import publish_queue_changed
 from app.services import sessions, student_identity
+from app.services.wait_time import WaitTimeService
 
 
 class EntryNotFound(LookupError):
@@ -161,6 +162,7 @@ class ClientState:
     queue_number: int | None = None
     display_name: str | None = None
     people_ahead: int | None = None
+    estimated_wait_minutes: int | None = None
 
 
 def join(public_code, token, display_name=None):
@@ -282,6 +284,7 @@ def client_state(public_code, token=None):
             entry.queue_number if entry else None,
             entry.display_name if entry else None,
             ahead,
+            WaitTimeService.estimate_minutes(help_session, ahead) if status == "waiting" else None,
         )
         db.session.commit()
         return state

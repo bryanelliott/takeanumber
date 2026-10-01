@@ -1,9 +1,9 @@
 # Take A Number
 
 A Flask/PostgreSQL application for student help queues in college labs.
-Milestones 0–5 provide the Flask/PostgreSQL foundation, instructor authentication,
+Milestones 0–6 provide the Flask/PostgreSQL foundation, instructor authentication,
 help sessions, public student queue joining/leaving, Master View advancement, and
-live queue updates. See `docs/implementation-plan.md` for later milestones.
+live queue updates, and wait-time estimates. See `docs/implementation-plan.md` for later milestones.
 
 ## Local setup (Windows PowerShell)
 
@@ -103,7 +103,7 @@ Join, Leave, Serve next, Done, and End share a session row lock. PostgreSQL also
 enforces at most one serving request per session. Completion and the next service
 start share a UTC database timestamp obtained after locking. Multiple Master View
 browsers read consistent database snapshots and update automatically after queue
-changes. **Refresh queue** remains available. Alerts and wait estimates are deferred.
+changes. **Refresh queue** remains available. Student alerts are deferred.
 
 The QR encodes the same absolute public URL as **Open student Client View**. It is
 generated locally as SVG using the existing `qrcode` dependency. Open the Master
@@ -187,7 +187,32 @@ disconnecting never leaves the queue, and the Exit page opens no socket.
 The Socket.IO 4.8.1 browser client is vendored locally under `app/static/vendor/`
 with its MIT license and source/hash notes. No runtime CDN or Node build is needed;
 `requirements.txt` is unchanged. No schema changes or migration are required.
-Sound, vibration, push notifications, and wait estimates remain later milestones.
+Sound, vibration, and push notifications remain later milestones.
+
+## Wait-time estimates (Milestone 6)
+
+Waiting students see an approximate wait from `app/services/wait_time.py`'s
+`WaitTimeService`. The arithmetic mean of **at least 3 valid current-session
+completions** takes priority. Otherwise, use this instructor's completed helps
+from **other ended sessions in the last 90 days**, based on completion time. One
+historical sample is sufficient; sparse current samples are not mixed in. If
+neither source qualifies, show that there is not enough completed help history.
+
+Only completed requests with positive, ordered, non-future service timestamps and
+no leave timestamp count. Incomplete, waiting, serving, left, and zero-duration
+requests are excluded; historical completions must precede their session's end.
+Other instructors' requests never contribute. No outlier trimming is applied.
+
+Multiply the unrounded average by the number ahead, including one full expected
+help for whoever is currently serving, then round the **total up to whole minutes**.
+Elapsed service time is not subtracted. With nobody ahead, show that the student
+is waiting for the instructor instead of promising an immediate start. Estimates
+exclude instructor pauses and disappear outside the waiting state. Live updates
+and manual refresh recalculate them from PostgreSQL; nothing derived is stored.
+
+The policy is intentionally fixed and simple in this milestone. See
+`docs/architecture.md` for exact boundaries. No migration or dependency changes
+are needed. Run `pytest tests/test_wait_time.py` for the focused test suite.
 
 ## Instructor authentication policy
 

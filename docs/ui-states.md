@@ -92,8 +92,16 @@ Display:
 - Leave Queue
 - Exit
 
-The Client View shows queue number, people ahead, and current state. Estimated wait
-is explicitly unavailable until Milestone 6. Milestone 5 updates this state live;
+The Client View shows queue number, people ahead, current state, and an approximate
+wait while waiting. Milestone 6 uses at least 3 current-session completions or the
+instructor's valid completed helps from other ended sessions in the last 90 days.
+The full policy is documented under WaitTimeService in `architecture.md`.
+The final estimate is rounded up to whole minutes and shown as `About N minutes`.
+With people ahead and insufficient history, display `Not enough completed help
+history yet`. With nobody ahead, display `No one ahead; waiting for the instructor`.
+The serving request ahead counts as one expected help; elapsed time is not
+subtracted. Estimates do not include instructor pauses and are not a countdown.
+Hide estimates outside the waiting state. Live updates recalculate the estimate;
 Refresh status remains available. Sound/vibration/push alerts are deferred. Only this browser's name
 and request are visible, never another browser's request or entered name.
 

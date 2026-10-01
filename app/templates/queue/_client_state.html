@@ -11,7 +11,16 @@
     <h2>{{ 'Currently serving' if state.status == 'serving' else 'Waiting for help' }}</h2>
     {% if state.display_name %}<p>Name: {{ state.display_name }}</p>{% endif %}
     <p>People ahead: {{ state.people_ahead }}</p>
-    <p>Estimated wait: not available yet.</p>
+    {% if state.status == 'waiting' %}
+      {% if state.estimated_wait_minutes == 0 %}
+        <p>Estimated wait: No one ahead; waiting for the instructor.</p>
+      {% elif state.estimated_wait_minutes is none %}
+        <p>Estimated wait: Not enough completed help history yet.</p>
+      {% else %}
+        <p>Estimated wait: About {{ state.estimated_wait_minutes }} {{ 'minute' if state.estimated_wait_minutes == 1 else 'minutes' }}.</p>
+        <p>This is approximate and does not include instructor pauses.</p>
+      {% endif %}
+    {% endif %}
     <form method="post" action="{{ url_for('queue.leave', public_code=state.public_code) }}">
       {{ leave_form.hidden_tag() }}
       {{ leave_form.submit() }}

@@ -190,6 +190,38 @@ Owns:
 - fallback to instructor history
 - estimated wait calculation
 
+Milestone 6 policy (defined before implementation):
+
+- Use the arithmetic mean of valid completed help durations in the current
+  session once it has at least **3** valid completions.
+- Below 3, use all valid completed helps from this instructor's **other, ended
+  sessions**, completed within the preceding **90 days**, inclusive of the cutoff.
+  One historical completion is sufficient. Do not blend histories or reuse the
+  sparse current sample as a third fallback. With no qualifying history, return
+  unavailable. Historical sessions must have ended by the calculation time.
+- A valid row has status `completed`, non-null join/start/completion timestamps,
+  `service_started_at >= joined_at`, `completed_at > service_started_at`, no
+  `left_at`, and completion no later than the calculation time. Historical
+  completion must also be no later than its session's end. Waiting, serving,
+  left, incomplete, zero/negative-duration, and future completions are excluded.
+  Do not trim legitimate long durations or add smoothing in this milestone.
+- Multiply the unrounded mean duration by the number ahead. A currently serving
+  request ahead counts as one full expected help, just like a waiting request.
+  Do not subtract elapsed service time or run a countdown. Queue numbers identify
+  order; gaps from left/completed requests do not count as people ahead.
+- Round only the final product **up to whole minutes**. Show `About N minutes`
+  (singular for 1). With people ahead but no usable history, show `Not enough
+  completed help history yet`. Zero people ahead returns 0 without needing
+  history; the UI instead says `No one ahead; waiting for the instructor` because
+  Serve next remains explicit. Hide estimates once serving, left, completed, or
+  ended, and before joining. Estimates exclude instructor pauses and are not a
+  promise about the exact start time.
+- `WaitTimeService` is a dedicated read-only service. It accepts an explicit UTC
+  calculation time for deterministic tests; ordinary calls use PostgreSQL wall
+  time. Client snapshots calculate the estimate while retaining their existing
+  session lock. No derived duration/estimate is stored, and no schema change is
+  required. Existing live fragment refreshes recalculate the estimate.
+
 ### MetricsService
 
 Owns:
