@@ -5,6 +5,8 @@ Milestones 0–6, Phase 7A, and Milestone 8 provide the Flask/PostgreSQL foundat
 help sessions, public student queue joining/leaving, Master View advancement, and
 live queue updates, wait-time estimates, in-browser student alerts, and instructor settings.
 See `docs/implementation-plan.md` for later milestones.
+Milestone 10 adds CI and Azure deployment preparation. Milestone 9 metrics remain
+unimplemented pending the peak queue history decision.
 
 ## Local setup (Windows PowerShell)
 
@@ -112,7 +114,7 @@ View using an address students can reach: a QR containing `127.0.0.1` or `localh
 will not reach the instructor's computer from their phones. For local phone testing
 on a trusted network, run `python run.py --host=0.0.0.0` without
 debug mode and open the Master View using that computer's reachable hostname/IP
-and port. Reverse-proxy URL handling remains part of future deployment work.
+and port. Production proxy/HTTPS handling is documented in [deployment.md](docs/deployment.md).
 
 ## Student queue (Milestone 3)
 
@@ -293,8 +295,8 @@ pytest tests/test_settings.py tests/test_migrations.py tests/test_live_browser.p
   15-minute window, including invalid-CSRF attempts. Rejection returns HTTP 429
   and `Retry-After`. The thread-safe limiter stores addresses only in bounded
   process memory; it resets on restart and assumes the documented single worker.
-  Forwarding headers are not trusted. A future proxy deployment must explicitly
-  configure trustworthy client addresses; otherwise clients behind that proxy
+  Client-address forwarding headers are not trusted by default. Production proxy
+  configuration must explicitly verify trustworthy hops; otherwise clients behind that proxy
   share its limit. Clients behind the same NAT also share a limit.
 
 ## Configuration
@@ -302,6 +304,9 @@ pytest tests/test_settings.py tests/test_migrations.py tests/test_live_browser.p
 | Variable | Purpose |
 | --- | --- |
 | `SECRET_KEY` | Required secret for Flask/CSRF. |
+| `APP_ENV` | `development` (default) or `production`; production enables strict validation. |
+| `TRUSTED_HOSTS` | Required exact comma-separated hostnames in production. |
+| `PROXY_FIX_X_FOR` | Trusted client-address proxy hops, 0–3; defaults to 0 pending ingress verification. |
 | `DATABASE_URL` | Required for ordinary app instances; PostgreSQL URL using psycopg. |
 | `TEST_DATABASE_URL` | Required for test instances; never falls back to `DATABASE_URL`. |
 | `SESSION_COOKIE_SECURE` | `true` for HTTPS cookies; `false` for local HTTP (default). |
@@ -329,8 +334,8 @@ pytest --cov=app --cov-report=term-missing
 Socket.IO tests cover room isolation, ownership, CSRF/origin rejection, minimal
 payloads, commit-before-notify, rollback, reconnects, and private state responses.
 If Chrome, Chromium, or Edge is installed, pytest also runs an isolated headless
-DOM test for draft preservation, reconnects, and overlapping refreshes. That one
-optional test skips when no supported browser is available.
+DOM tests for draft preservation, reconnects, overlapping refreshes, and alert
+fallbacks. These optional tests skip when no supported browser is available.
 
 Tests explicitly create the app with `TESTING=True`. Before any database engine
 is initialized, the factory requires a `TEST_DATABASE_URL` with a loopback host,
@@ -350,7 +355,8 @@ these dedicated local instances; never point tests at a development or productio
 database. Guards catch configuration mistakes, but names alone cannot prove a
 database is disposable. The integration tests verify the actual connected database
 and role. Missing configuration or unavailable PostgreSQL fails tests rather than
-silently skipping them. Non-loopback CI database support is deferred.
+silently skipping them. CI maps its disposable PostgreSQL service to loopback and
+uses the same safety checks.
 
 Integration tests verify the actual database and role, apply Alembic migrations
 only to the dedicated test database, and clean queue entries, browser identities,
@@ -359,6 +365,37 @@ and upgrade again on that disposable database, including preservation of existin
 instructor accounts across the HelpSession migration.
 Tests do not call `create_all` or `drop_all`. Do not run parallel test processes
 against this single test database.
+
+## Operations: CI and Azure deployment
+
+CI runs Ruff and pytest on Python 3.13 with a disposable PostgreSQL 17 service for
+pull requests and `main`. Existing test database guards remain enabled. Require
+the **Ruff and pytest** check before merging.
+
+The **Deploy Azure production** workflow is manually dispatched from `main`,
+reruns CI, and uses the protected `production` environment plus Azure OIDC.
+It migrates before deploying a source ZIP; migration failure blocks deployment.
+Production startup is **`bash startup.sh`**, running one threaded Gunicorn worker.
+Use one App Service instance and Azure Database for PostgreSQL Flexible Server.
+
+Configure Azure resources, environment reviewers, the private-network deployment
+runner, runtime settings, and the exact GitHub variables/secrets listed in
+[the deployment runbook](docs/deployment.md) before dispatching. Runtime cookies
+must be secure and PostgreSQL connections must verify certificates and hostname.
+No Azure resources or workflows have been run by this repository preparation.
+
+The operator migration command, from the reviewed release with its protected
+production environment configured, is:
+
+```bash
+python -m flask --app app:create_app deploy-upgrade
+```
+
+It serializes migrations and rolls back transactional failures. Only reviewed,
+backward-compatible migrations use the routine live deployment path. Do not run
+migrations at startup, run tests against production, or automatically downgrade
+after a failed deployment. See the runbook for backup, approval, verification,
+rollback, proxy configuration, logging, and required Azure validation.
 
 ## Migrations
 
@@ -417,7 +454,7 @@ app/
   config.py        environment settings and database guards
   extensions.py    SQLAlchemy, Flask-Migrate, CSRF, Flask-Login
   realtime.py      Socket.IO room subscriptions and post-commit notices
-  cli.py           read-only database check
+  cli.py           database check and serialized deployment migrations
   health/          health blueprint
   models/          Instructor, HelpSession, StudentIdentity, QueueEntry
   auth/            forms, credential services, routes, authentication throttling
@@ -427,6 +464,8 @@ app/
   templates/       server-rendered instructor and student views
   static/          focused live-update JavaScript and vendored Socket.IO client
 run.py             local single-process Socket.IO server
+startup.sh         production single-worker threaded Gunicorn startup
+.github/workflows/ PostgreSQL CI and protected Azure OIDC deployment
 migrations/        Alembic configuration and versioned schema
 tests/             foundation, authentication, session, database, and migration tests
 compose.yaml       local development and test PostgreSQL servers

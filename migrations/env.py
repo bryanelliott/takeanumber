@@ -85,6 +85,16 @@ def run_migrations_online():
     if conf_args.get("process_revision_directives") is None:
         conf_args["process_revision_directives"] = process_revision_directives
 
+    # The deployment command supplies one externally managed transaction and lock.
+    supplied_connection = config.attributes.get("connection")
+    if supplied_connection is not None:
+        context.configure(
+            connection=supplied_connection, target_metadata=get_metadata(), **conf_args
+        )
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     connectable = get_engine()
 
     with connectable.connect() as connection:

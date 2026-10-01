@@ -615,3 +615,18 @@ GitHub Actions should eventually:
 6. deploy App Service artifact
 
 Prefer OIDC-based Azure authentication when CI/CD is implemented.
+
+Milestone 10 implements PR/main CI with a disposable PostgreSQL 17 service and
+Python 3.13. A manual main-only workflow reruns CI before an environment-protected
+Azure OIDC deployment. Production uses one App Service Linux instance and one
+threaded Gunicorn worker, with PostgreSQL Flexible Server and verified TLS.
+Production validation requires secure cookies, a generated signing secret, and
+explicit trusted hosts. Forwarded scheme is trusted for App Service TLS termination;
+client-address trust remains disabled until the ingress chain is verified.
+
+Migrations run once from a trusted deployment runner through `deploy-upgrade`,
+using a PostgreSQL transaction advisory lock and the same Alembic connection.
+Startup never migrates. The routine deployment path permits only backward-compatible,
+transactional migrations while the old release remains live; failures block code
+deployment. See [deployment.md](deployment.md) for exact configuration names,
+OIDC claims, runner/network requirements, migration review, and recovery steps.
