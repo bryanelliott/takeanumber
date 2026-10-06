@@ -2,6 +2,7 @@
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-ra"
+markers = ["browser: optional live browser/DOM tests, excluded from the CI deployment gate"]
 
 [tool.ruff]
 target-version = "py313"

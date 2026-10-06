@@ -7,7 +7,12 @@ Milestone 9 metrics remain unimplemented pending the peak-history decision.
 
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main`, and is reused
 by deployment. Python 3.13 installs the existing pinned `requirements.txt`, then
-runs `pip check`, Ruff, pytest, and a Bash syntax check. PostgreSQL 17 is a disposable
+runs `pip check`, Ruff, `pytest -m "not browser"`, and a Bash syntax check.
+The `browser` marker covers only optional live browser/DOM tests, which are run
+manually with `pytest -m browser` and are not part of the deployment gate because
+hosted Chromium behavior can cause runner-specific failures. All unit, integration,
+database, migration, auth, queue, Socket.IO, and production configuration tests
+remain required. PostgreSQL 17 is a disposable
 service mapped to `127.0.0.1:55433`. Its database/role are `takeanumber_test`; its
 public CI password is not a credential for any persistent database. Existing test
 guards, migration round-trips, and actual database/role checks remain in force.

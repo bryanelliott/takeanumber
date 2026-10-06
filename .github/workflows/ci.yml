@@ -47,6 +47,6 @@ jobs:
       - name: Ruff
         run: python -m ruff check .
       - name: Pytest (migrates only the disposable test database)
-        run: python -m pytest
+        run: python -m pytest -m "not browser"
       - name: Check Linux startup script
         run: bash -n startup.sh

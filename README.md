@@ -326,16 +326,21 @@ In an activated virtual environment, after copying/configuring `.env`:
 ```powershell
 docker compose up -d --wait test-db
 ruff check .
-pytest
+pytest -m "not browser"
 # Optional coverage report:
-pytest --cov=app --cov-report=term-missing
+pytest -m "not browser" --cov=app --cov-report=term-missing
+# Optional manual live browser/DOM checks:
+pytest -m browser
 ```
 
 Socket.IO tests cover room isolation, ownership, CSRF/origin rejection, minimal
 payloads, commit-before-notify, rollback, reconnects, and private state responses.
-If Chrome, Chromium, or Edge is installed, pytest also runs an isolated headless
-DOM tests for draft preservation, reconnects, overlapping refreshes, and alert
-fallbacks. These optional tests skip when no supported browser is available.
+The `browser` marker selects isolated headless DOM tests for draft preservation,
+reconnects, overlapping refreshes, and alert fallbacks. They are optional/manual
+and excluded from normal CI and the deployment gate because hosted Chromium can
+fail for runner-specific reasons. They skip when Chrome, Chromium, or Edge is not
+installed. Plain `pytest` still includes them. All unit, integration, database,
+migration, auth, queue, Socket.IO, and production configuration tests remain required.
 On Linux with `CI` or `GITHUB_ACTIONS` set to a nonempty value, only this test
 browser uses `--no-sandbox` to support runners without a usable Chromium sandbox.
 Local runs without those markers and all Windows runs retain normal sandboxing.
@@ -371,7 +376,7 @@ against this single test database.
 
 ## Operations: CI and Azure deployment
 
-CI runs Ruff and pytest on Python 3.13 with a disposable PostgreSQL 17 service for
+CI runs Ruff and `pytest -m "not browser"` on Python 3.13 with a disposable PostgreSQL 17 service for
 pull requests and `main`. Existing test database guards remain enabled. Require
 the **Ruff and pytest** check before merging.
 
