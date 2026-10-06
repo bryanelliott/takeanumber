@@ -11,10 +11,10 @@ runs `pip check`, Ruff, pytest, and a Bash syntax check. PostgreSQL 17 is a disp
 service mapped to `127.0.0.1:55433`. Its database/role are `takeanumber_test`; its
 public CI password is not a credential for any persistent database. Existing test
 guards, migration round-trips, and actual database/role checks remain in force.
-PR jobs receive no Azure secrets, OIDC permissions, or deployment runner access.
+PR jobs receive no deployment secrets or deployment runner access.
 
 Require **Ruff and pytest** in branch protection for `main`. Review workflow
-changes and periodically update the full-commit action pins. Never execute PR
+changes and periodically review action versions and full-commit pins. Never execute PR
 code with deployment permissions through `pull_request_target`.
 
 ## Azure runtime
@@ -74,8 +74,8 @@ may be used instead. Do not pin leaf/intermediate certificates, disable TLS
 verification, or add libpq host/service overrides to the URL. Runtime and migration
 URLs must target the same server/database. The migration role needs schema DDL
 rights; a separate runtime role needs table access and default grants on future
-migration-created objects. Verify those grants after migration. OIDC below covers
-the Azure control plane, not PostgreSQL authorization.
+migration-created objects. Verify those grants after migration. Database password
+authentication is independent of App Service publishing credentials.
 
 Production trusts one `X-Forwarded-Proto` hop for App Service TLS termination, but
 never forwarded Host/port/prefix. Confirm ingress overwrites the scheme header and
@@ -86,7 +86,7 @@ the actual ingress chain, configure the exact trusted client-address hop count
 effective address. Reassess when adding Front Door or another proxy. Verify HTTPS
 QR URLs, secure cookies, CSRF, and same-origin Socket.IO on the deployed hostname.
 
-## GitHub environment and OIDC
+## GitHub environment and publish profile
 
 Create the **`production`** environment with required reviewers, prevent self-review
 where supported, and restrict deployments to protected `main`. If the repository
@@ -94,45 +94,58 @@ plan cannot enforce those controls, establish an equivalent approval gate before
 enabling deployment. Deployment is manual, accepts no arbitrary source ref, reruns
 CI on the selected main commit, and serializes runs without cancelling migrations.
 
-Create an Entra application/service principal or user-assigned identity with:
+In the Azure portal, enable **SCM Basic Auth Publishing Credentials** for the target
+app and download its production publish profile. For Linux, set
+`WEBSITE_WEBDEPLOY_USE_SCM=true` before downloading if required by the portal.
+Store the complete XML contents as the `production` environment secret
+`AZURE_WEBAPP_PUBLISH_PROFILE`. Treat it as a password: never commit it, include it
+in artifacts, or print it; rotate/reset publishing credentials and replace the
+secret when needed. FTP publishing is not needed. If platform policy disables SCM
+basic authentication, an administrator must allow it before this method can work.
 
-| Federated credential field | Value |
-| --- | --- |
-| Issuer | `https://token.actions.githubusercontent.com` |
-| Subject | `repo:<owner>/<repository>:environment:production` |
-| Audience | `api://AzureADTokenExchange` |
-
-Grant Website Contributor **at the target web app scope**, or a narrower reviewed
-custom deployment/configuration-read role. Do not grant subscription Owner.
-Provisioning and database permissions are separate operator tasks. Only the deploy
-job has `id-token: write`; Azure Login exchanges that token for short-lived Azure
-access. No client secret, publish profile, or `AZURE_CREDENTIALS` JSON is used.
+The workflow uses `azure/webapps-deploy@v3` with that profile. It needs no Azure CLI
+installation or authenticated Azure session. Configure the Python stack and
+**`bash startup.sh`** startup command in the portal before approving deployment;
+the action's `startup-command` input is unsupported with publish profiles.
+The preflight script reads SCM `/api/settings` using the same profile, requires
+`SCM_DO_BUILD_DURING_DEPLOYMENT=true`, and rejects run-from-package. It fails closed
+on authentication/network errors without printing credentials or settings.
 
 Required GitHub configuration (exact names consumed by the workflow):
 
 | Scope/type | Name | Purpose |
 | --- | --- | --- |
-| Repository variable | `AZURE_DEPLOY_RUNNER_LABELS` | JSON array selecting an isolated ephemeral Linux deployment runner, e.g. `["self-hosted", "linux", "x64", "azure-deploy"]`. Repository scope is required for runner selection. |
+| Repository variable (optional) | `AZURE_DEPLOY_RUNNER_LABELS` | JSON array selecting an isolated ephemeral Linux deployment runner, e.g. `["self-hosted", "linux", "x64", "azure-deploy"]`. Defaults to `["ubuntu-24.04"]`; repository scope is required for runner selection. |
 | `production` variable | `AZURE_WEBAPP_NAME` | Existing target web app name. |
-| `production` variable | `AZURE_RESOURCE_GROUP` | App's resource group. |
 | `production` variable | `APP_HEALTH_URL` | Exact target HTTPS URL ending in `/health`. |
 | `production` variable | `APP_TRUSTED_HOSTS` | Same host list as runtime `TRUSTED_HOSTS`, for the CLI factory. |
-| `production` secret | `AZURE_CLIENT_ID` | Federated Entra application/identity client ID. |
-| `production` secret | `AZURE_TENANT_ID` | Entra tenant ID. |
-| `production` secret | `AZURE_SUBSCRIPTION_ID` | Target subscription ID. |
+| `production` secret | `AZURE_WEBAPP_PUBLISH_PROFILE` | Complete production App Service publish-profile XML. |
 | `production` secret | `MIGRATION_DATABASE_URL` | DDL-capable URL with verified TLS; same server/database as runtime. |
 
-The three Azure IDs identify federation, not passwords; environment secrets match
-Azure Login's recommended inputs. Runtime signing/database secrets live in App
+Runtime signing/database secrets live in App
 Service or Key Vault references, not ZIPs. The migration CLI generates a temporary
 signing key because it serves no requests; never reuse it as the runtime key.
 
-The deployment runner needs Azure CLI, Git, Bash, curl, Python 3.13/setup-python
-support, current CA roots, and network/DNS access to Flexible Server, Azure control
-plane, App Service SCM, GitHub, and package downloads. Restrict its runner group to
-trusted deployment workflows, never PR code or untrusted repositories. Recreate
-the runner after each job; do not retain release environments/credentials on a
-shared host. CI always uses GitHub-hosted Ubuntu and its disposable database.
+The migration command requires only Python 3.13, application dependencies, current
+CA certificates, the production configuration below, and network/DNS access to
+Flexible Server (normally TCP 5432). It authenticates directly using the database
+password in `MIGRATION_DATABASE_URL`, mapped to `DATABASE_URL` for the CLI.
+
+The migration job uses checkout/setup-python and Bash to prepare that command;
+it has no publish-profile input or Azure authentication step. The separate
+deployment job also uses Git, Bash, curl, setup-python, and HTTPS
+access to App Service SCM, GitHub, package downloads, and the public health URL.
+GitHub-hosted runners work only when the database firewall/routing permits them.
+They cannot normally resolve/reach a private Flexible Server endpoint. Use an
+isolated ephemeral runner with private DNS/routing, or the manual procedure below;
+do not expose a private database just to make this workflow pass. Restrict any
+self-hosted runner group to trusted deployment workflows, never PR code or
+untrusted repositories, and recreate runners after each job. CI always uses
+GitHub-hosted Ubuntu and its disposable database.
+
+`.github/workflows/deploy.yml` is the sole deployment workflow. The portal-generated
+push deployment has been removed because it bypassed CI, environment approval,
+and migrations. Do not re-enable it through Deployment Center.
 
 ## Release and migration procedure
 
@@ -147,9 +160,12 @@ shared host. CI always uses GitHub-hosted Ubuntu and its disposable database.
    for them. End live help sessions before disruptive maintenance.
 3. Dispatch **Deploy Azure production** from `main`. After that SHA passes CI,
    the environment reviewer confirms the preparation above before allowing the
-   deployment job. Review queued runs to avoid deploying an obsolete commit.
-4. The job installs dependencies, authenticates through OIDC, checks build
-   automation, and runs `python -m flask --app app:create_app deploy-upgrade`.
+   migration job. Both migration and deployment jobs use the protected environment.
+   Keep `migration_mode=runner` (the default) and leave
+   `migrated_sha` empty. Review queued runs to avoid deploying an obsolete commit.
+4. The migration job installs dependencies and runs
+   `python -m flask --app app:create_app deploy-upgrade` with the protected
+   `MIGRATION_DATABASE_URL` secret; no Azure login is involved in migrations.
    This command holds transaction advisory lock `20261001`, sets a 5-second DDL
    lock timeout and 120-second per-statement timeout, runs Alembic on the same
    connection/outer transaction, and checks the resulting single migration head.
@@ -157,7 +173,11 @@ shared host. CI always uses GitHub-hosted Ubuntu and its disposable database.
    rolls back transactional changes. All production migration operators must use
    this command to cooperate with the lock. Never use `db stamp` to disguise a
    mismatch, and never migrate in web-process startup hooks.
-5. Only tracked `app/`, `migrations/`, `requirements.txt`, and `startup.sh` from the
+   `db.create_all()` and direct `flask db upgrade` are not production migration
+   paths; `deploy-upgrade` is the only supported production migration command.
+5. Only after migration approval/success does the deployment job check build
+   automation with the publish profile. Only tracked `app/`, `migrations/`,
+   `requirements.txt`, and `startup.sh` from the
    tested SHA enter the source ZIP. `.env`, `.git`, tests, local virtual environments,
    and runner secrets are excluded. App Service builds and deploys this package.
 6. The job checks `/health`. Then verify database-backed login, ownership checks,
@@ -166,31 +186,86 @@ shared host. CI always uses GitHub-hosted Ubuntu and its disposable database.
    establish database readiness or that the right release is serving.
 
 If migration fails, code deployment does not run. Review the database revision
-before retrying. If deployment/health checks fail **after** migration, the schema
+before retrying. If build preflight/deployment/health checks fail **after** migration, the schema
 may already be upgraded. Restore the previous compatible application artifact or
 roll forward after review; never automatically downgrade schema or retry against
 another database. Database restore requires the Flexible Server recovery procedure
 and may require coordinated configuration changes and downtime. Never run pytest
 against production or the migration database.
 
+## Manual migration for private database networking
+
+Use this only when the deployment runner cannot reach Flexible Server. The trusted
+machine needs private network/VPN connectivity, working private DNS for the
+canonical server hostname, Python 3.13, application dependencies, and current CA
+roots. No App Service publish profile or Azure authentication is needed there.
+
+1. Complete the backup, compatibility, target-database, and CI review above for
+   the exact release commit on protected `main`. Coordinate with other operators:
+   allow no competing release between the manual migration and code deployment.
+   The database advisory lock covers the migration transaction, not that interval.
+2. On the trusted machine, check out that exact full commit SHA in a clean release
+   directory. Create/activate an isolated Python environment and install
+   `requirements.txt`; run `python -m pip check`. Supply the same protected migration
+   database credential through an approved secret channel. GitHub environment
+   secrets cannot be downloaded after saving them; retain the credential in your
+   approved secret store. Do not paste it into command history, logs, or source.
+3. In a Bash session with `MIGRATION_DATABASE_URL` securely injected, run:
+
+   ```bash
+   set -euo pipefail
+   set +x
+   export APP_ENV=production FLASK_SKIP_DOTENV=1 FLASK_DEBUG=0
+   export SESSION_COOKIE_SECURE=true PROXY_FIX_X_FOR=0
+   export TRUSTED_HOSTS='<same comma-separated hostnames as App Service>'
+   export DATABASE_URL="${MIGRATION_DATABASE_URL:?Supply the protected migration URL}"
+   export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+   unset TEST_DATABASE_URL
+   python -m flask --app app:create_app deploy-upgrade
+   unset DATABASE_URL MIGRATION_DATABASE_URL SECRET_KEY
+   ```
+
+   Use a CA bundle path valid on this machine in `sslrootcert`, keeping
+   `sslmode=verify-full` and the same server/database/role. The temporary signing
+   key serves only this CLI process. A nonzero exit means **stop**; do not deploy.
+   The same lock, transaction, timeouts, and migration-head checks run here.
+4. Record the full commit SHA, successful exit and `Database upgraded to the release
+   head.` message, database target (without credentials), operator, and time in the
+   protected release record. Close the credential-bearing shell even after failure.
+5. Dispatch **Deploy Azure production** from `main` with `migration_mode=manual`
+   and `migrated_sha` equal to that full SHA. The workflow reruns CI and rejects a
+   SHA different from its tested `github.sha`. If `main` has advanced, stop and
+   review/migrate the new release; do not substitute an unverified SHA.
+6. Before approving the `production` environment, the reviewer must verify that
+   migration evidence and database target match this release, and that no other
+   migration intervened. Manual mode skips the runner's migration step; the SHA
+   check is an attestation check, not a remote database readiness check. Missing or
+   failed migration evidence must block approval. The build preflight, tracked-file
+   packaging, publish-profile deployment, and health checks still run normally.
+
+There is no automatic fallback to manual mode on migration failure. If SCM also
+uses private access restrictions, deployment still needs a runner that can reach
+SCM; manual database migration does not bypass those restrictions.
+
 ## Logging and validation limits
 
 Gunicorn access logging remains off by default; error logs use warning level.
 SQLAlchemy hides bound parameters, and migration failures avoid printing sensitive
-exceptions. Do not enable SQL echo, request body/cookie capture, or verbose Azure
-CLI output. CLI output is suppressed except the nonsecret build flag query.
+exceptions. Do not enable SQL echo, request body/cookie capture, shell tracing, or
+verbose credential/SCM HTTP logging. The SCM preflight prints only its status.
 Application Insights instrumentation is not added. If enabling platform diagnostics,
 review access/retention and collect operational status, duration, and sanitized
 errors only; avoid names, browser identifiers, cookies, bodies, connection strings,
 and IP/geolocation enrichment. No student location collection is added.
 
 Local validation checks workflow syntax, Bash syntax, configuration, and migration
-transactions on the dedicated test database. Azure federation, RBAC, private
+transactions on the dedicated test database. Publishing credentials, SCM access, private
 routing, CA trust, Oryx builds, and real WebSockets require provisioned-environment
 verification. Repository preparation does not dispatch workflows or mutate Azure.
 
-References: [Azure OIDC deployment](https://learn.microsoft.com/en-us/azure/app-service/deploy-github-actions),
-[Azure Login](https://github.com/Azure/login),
+References: [App Service GitHub deployment and publish profiles](https://learn.microsoft.com/en-us/azure/app-service/deploy-github-actions),
+[Web Apps Deploy action limitations](https://github.com/Azure/webapps-deploy),
+[SCM settings API](https://github.com/projectkudu/kudu/wiki/REST-API#settings),
 [Python App Service configuration](https://learn.microsoft.com/en-us/azure/app-service/configure-language-python),
 [Flexible Server TLS](https://learn.microsoft.com/en-us/azure/postgresql/security/security-tls-how-to-connect),
 and [Flask-SocketIO deployment](https://flask-socketio.readthedocs.io/en/latest/deployment.html).

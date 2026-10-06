@@ -373,16 +373,21 @@ pull requests and `main`. Existing test database guards remain enabled. Require
 the **Ruff and pytest** check before merging.
 
 The **Deploy Azure production** workflow is manually dispatched from `main`,
-reruns CI, and uses the protected `production` environment plus Azure OIDC.
-It migrates before deploying a source ZIP; migration failure blocks deployment.
+reruns CI, and uses the protected `production` environment with
+`AZURE_WEBAPP_PUBLISH_PROFILE` and `azure/webapps-deploy@v3`.
+By default it runs `deploy-upgrade` using `MIGRATION_DATABASE_URL` before deploying
+a source ZIP; migration failure blocks deployment. No Azure CLI login is required.
 Production startup is **`bash startup.sh`**, running one threaded Gunicorn worker.
 Use one App Service instance and Azure Database for PostgreSQL Flexible Server.
 
-Configure Azure resources, environment reviewers, the private-network deployment
-runner, runtime settings, and the exact GitHub variables/secrets listed in
+Configure Azure resources, environment reviewers, runner database connectivity,
+runtime settings, and the exact GitHub variables/secrets listed in
 [the deployment runbook](docs/deployment.md) before dispatching. Runtime cookies
 must be secure and PostgreSQL connections must verify certificates and hostname.
 No Azure resources or workflows have been run by this repository preparation.
+The runbook also covers manual migration from a trusted machine when private
+networking prevents runner access, followed by an approved deployment of the same
+commit. The portal-generated push deployment is removed so it cannot bypass these gates.
 
 The operator migration command, from the reviewed release with its protected
 production environment configured, is:
@@ -465,7 +470,7 @@ app/
   static/          focused live-update JavaScript and vendored Socket.IO client
 run.py             local single-process Socket.IO server
 startup.sh         production single-worker threaded Gunicorn startup
-.github/workflows/ PostgreSQL CI and protected Azure OIDC deployment
+.github/workflows/ PostgreSQL CI and protected Azure publish-profile deployment
 migrations/        Alembic configuration and versioned schema
 tests/             foundation, authentication, session, database, and migration tests
 compose.yaml       local development and test PostgreSQL servers

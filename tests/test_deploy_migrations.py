@@ -7,6 +7,50 @@ from sqlalchemy import inspect, text
 from app.extensions import db
 
 
+def test_deployment_requires_a_single_release_head(app):
+    for heads in [[], ["first", "second"]]:
+        with patch("app.cli.ScriptDirectory.from_config") as scripts:
+            scripts.return_value.get_heads.return_value = heads
+            with patch("app.cli.command.upgrade") as migrate:
+                result = app.test_cli_runner().invoke(args=["deploy-upgrade"])
+        assert result.exit_code != 0
+        assert "exactly one migration head" in result.output
+        migrate.assert_not_called()
+
+
+def test_deployment_sets_transaction_local_timeouts(app, auth_db):
+    from app.cli import command
+
+    real_upgrade = command.upgrade
+
+    def inspect_timeouts(config, revision):
+        connection = config.attributes["connection"]
+        assert connection.in_transaction()
+        assert connection.scalar(text("SHOW lock_timeout")) == "5s"
+        assert connection.scalar(text("SHOW statement_timeout")) == "2min"
+        real_upgrade(config, revision)
+
+    with patch("app.cli.command.upgrade", side_effect=inspect_timeouts):
+        result = app.test_cli_runner().invoke(args=["deploy-upgrade"])
+    assert result.exit_code == 0, result.output
+
+
+def test_deployment_head_mismatch_rolls_back(app, auth_db):
+    def wrong_head(config, revision):
+        config.attributes["connection"].execute(
+            text("UPDATE alembic_version SET version_num = 'wrong-head'")
+        )
+
+    with patch("app.cli.command.upgrade", side_effect=wrong_head):
+        result = app.test_cli_runner().invoke(args=["deploy-upgrade"])
+    assert result.exit_code != 0
+    assert "Database revision does not match the release" in result.output
+    with app.app_context(), db.engine.connect() as connection:
+        assert MigrationContext.configure(connection).get_current_heads() == (
+            "0005_instructor_settings",
+        )
+
+
 def test_deployment_upgrade_is_repeatable(app, auth_db):
     for _ in range(2):
         result = app.test_cli_runner().invoke(args=["deploy-upgrade"])

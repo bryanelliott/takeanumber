@@ -611,14 +611,14 @@ GitHub Actions should eventually:
 2. start/provision PostgreSQL service
 3. run Ruff
 4. run pytest
-5. on approved main-branch deployment, authenticate to Azure
-6. deploy App Service artifact
+5. on approved main-branch deployment, run reviewed migrations with `deploy-upgrade`
+6. deploy App Service artifact using its publish profile
 
-Prefer OIDC-based Azure authentication when CI/CD is implemented.
+Use the protected `AZURE_WEBAPP_PUBLISH_PROFILE` secret with `azure/webapps-deploy@v3`.
 
 Milestone 10 implements PR/main CI with a disposable PostgreSQL 17 service and
 Python 3.13. A manual main-only workflow reruns CI before an environment-protected
-Azure OIDC deployment. Production uses one App Service Linux instance and one
+publish-profile deployment. Production uses one App Service Linux instance and one
 threaded Gunicorn worker, with PostgreSQL Flexible Server and verified TLS.
 Production validation requires secure cookies, a generated signing secret, and
 explicit trusted hosts. Forwarded scheme is trusted for App Service TLS termination;
@@ -629,4 +629,8 @@ using a PostgreSQL transaction advisory lock and the same Alembic connection.
 Startup never migrates. The routine deployment path permits only backward-compatible,
 transactional migrations while the old release remains live; failures block code
 deployment. See [deployment.md](deployment.md) for exact configuration names,
-OIDC claims, runner/network requirements, migration review, and recovery steps.
+publish-profile setup, runner/network requirements, migration review, and recovery
+steps. Migrations use `MIGRATION_DATABASE_URL` directly without Azure authentication.
+For private databases unreachable from GitHub-hosted runners, a trusted machine
+can run the same command before an explicitly reviewed manual-mode deployment
+bound to the migrated commit SHA.

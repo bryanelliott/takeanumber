@@ -239,15 +239,16 @@ Deliverables:
 - PostgreSQL service in CI
 - Ruff + pytest gates
 - Azure deployment workflow
-- OIDC Azure authentication
+- App Service publish-profile authentication using `AZURE_WEBAPP_PUBLISH_PROFILE`
 - Azure App Service startup command
 - production config
-- migration/deployment procedure
+- migration/deployment procedure with direct database authentication and a trusted-machine fallback
 - Application Insights/logging review
 
 Acceptance criteria:
 
 - PR checks run automatically
 - main deployment is controlled and reproducible
-- no long-lived Azure password is required in GitHub if OIDC is available
+- deployment uses `azure/webapps-deploy@v3` and the protected publish-profile secret
+- migrations use only database credentials and network access, before code deployment
 - production secrets are outside source control
