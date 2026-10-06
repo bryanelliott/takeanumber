@@ -3,6 +3,7 @@
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -31,19 +32,27 @@ def test_live_browser_behavior(tmp_path, fixture_name):
     fixture = Path(__file__).with_name(filename).resolve().as_uri()
     if fragment:
         fixture += "#" + fragment
-    result = subprocess.run(
+    browser_args = [
+        browser,
+        "--headless=new",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-background-networking",
+        "--disable-extensions",
+    ]
+    if sys.platform == "linux" and (os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS")):
+        # Linux CI may not provide Chromium's sandbox; only these test fixtures opt out.
+        browser_args.append("--no-sandbox")
+    browser_args.extend(
         [
-            browser,
-            "--headless=new",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-background-networking",
-            "--disable-extensions",
             f"--user-data-dir={tmp_path / 'browser-profile'}",
             "--virtual-time-budget=5000",
             "--dump-dom",
             fixture,
-        ],
+        ]
+    )
+    result = subprocess.run(
+        browser_args,
         capture_output=True,
         text=True,
         encoding="utf-8",

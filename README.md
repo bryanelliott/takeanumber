@@ -336,6 +336,9 @@ payloads, commit-before-notify, rollback, reconnects, and private state response
 If Chrome, Chromium, or Edge is installed, pytest also runs an isolated headless
 DOM tests for draft preservation, reconnects, overlapping refreshes, and alert
 fallbacks. These optional tests skip when no supported browser is available.
+On Linux with `CI` or `GITHUB_ACTIONS` set to a nonempty value, only this test
+browser uses `--no-sandbox` to support runners without a usable Chromium sandbox.
+Local runs without those markers and all Windows runs retain normal sandboxing.
 
 Tests explicitly create the app with `TESTING=True`. Before any database engine
 is initialized, the factory requires a `TEST_DATABASE_URL` with a loopback host,
