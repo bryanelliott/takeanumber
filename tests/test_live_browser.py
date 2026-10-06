@@ -39,6 +39,7 @@ def test_live_browser_behavior(tmp_path, fixture_name):
             "--no-default-browser-check",
             "--disable-background-networking",
             "--disable-extensions",
+            "--no-sandbox",
             f"--user-data-dir={tmp_path / 'browser-profile'}",
             "--virtual-time-budget=5000",
             "--dump-dom",
