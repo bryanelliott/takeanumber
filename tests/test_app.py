@@ -16,6 +16,6 @@ def test_database_check_reports_failure_without_credentials(app):
         )
         result = app.test_cli_runner().invoke(args=["check-db"])
     assert result.exit_code == 1
-    assert "PostgreSQL connection failed" in result.output
+    assert "[database-connection]" in result.output
     assert "secret password" not in result.output
     assert "sensitive connection details" not in result.output

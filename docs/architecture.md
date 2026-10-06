@@ -634,3 +634,7 @@ steps. Migrations use `MIGRATION_DATABASE_URL` directly without Azure authentica
 For private databases unreachable from GitHub-hosted runners, a trusted machine
 can run the same command before an explicitly reviewed manual-mode deployment
 bound to the migrated commit SHA.
+The current Flexible Server uses private VNet access, so manual mode is the default.
+Runner mode rejects private databases on standard GitHub-hosted runners before
+connecting. Operator database commands expose fixed diagnostic categories without
+printing driver errors, connection strings, SQL parameters, or credentials.

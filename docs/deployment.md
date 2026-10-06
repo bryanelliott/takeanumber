@@ -30,6 +30,16 @@ networking, App Service VNet integration, and working private DNS. Provision the
 database and roles through platform setup; application tables/indexes/constraints
 are created only by Alembic migrations.
 
+Read-only Azure inspection on **2026-10-06** confirmed that the current
+`takeanumber-server.postgres.database.azure.com` has public network access
+**Disabled**, a delegated subnet in `vnet-bopaypza`, and the private DNS zone
+`privatelink.postgres.database.azure.com` linked to that VNet with status Completed.
+This is private VNet access, not a public endpoint with a missing firewall rule.
+The workflow's standard GitHub-hosted runner has no configured private network
+path. Use the manual migration procedure below for this deployment. A working
+App Service connection does not give a GitHub runner that network access.
+Recheck Portal → PostgreSQL Flexible Server → Networking if infrastructure changes.
+
 Configure the app for **one instance**, with automatic scaling/autoscale disabled.
 Do not attach another serving slot to the same live queue. Socket.IO rooms and
 authentication limits are process-local; additional workers/instances need a
@@ -124,6 +134,7 @@ Required GitHub configuration (exact names consumed by the workflow):
 | `production` variable | `AZURE_WEBAPP_NAME` | Existing target web app name. |
 | `production` variable | `APP_HEALTH_URL` | Exact target HTTPS URL ending in `/health`. |
 | `production` variable | `APP_TRUSTED_HOSTS` | Same host list as runtime `TRUSTED_HOSTS`, for the CLI factory. |
+| `production` variable | `MIGRATION_DATABASE_NETWORK` | `private` (default and current deployment). Use `public` only after verifying that the server really exposes public access and the runner is allowed through its firewall. |
 | `production` secret | `AZURE_WEBAPP_PUBLISH_PROFILE` | Complete production App Service publish-profile XML. |
 | `production` secret | `MIGRATION_DATABASE_URL` | DDL-capable URL with verified TLS; same server/database as runtime. |
 
@@ -135,6 +146,13 @@ The migration command requires only Python 3.13, application dependencies, curre
 CA certificates, the production configuration below, and network/DNS access to
 Flexible Server (normally TCP 5432). It authenticates directly using the database
 password in `MIGRATION_DATABASE_URL`, mapped to `DATABASE_URL` for the CLI.
+This mapping is intentional: the app factory reads `DATABASE_URL`, not
+`MIGRATION_DATABASE_URL`. The GitHub secret must contain the **migration role**
+with schema DDL privileges and ownership/membership needed to alter existing
+objects, not the restricted App Service runtime role. GitHub masks the value, so
+`DATABASE_URL=***` confirms neither which role it contains nor its privileges.
+Verify or replace that secret from the approved credential store; its saved value
+cannot be read back through GitHub. Do not grant DDL to the runtime role to fix this.
 
 The migration job uses checkout/setup-python and Bash to prepare that command;
 it has no publish-profile input or Azure authentication step. The separate
@@ -147,6 +165,13 @@ do not expose a private database just to make this workflow pass. Restrict any
 self-hosted runner group to trusted deployment workflows, never PR code or
 untrusted repositories, and recreate runners after each job. CI always uses
 GitHub-hosted Ubuntu and its disposable database.
+
+The workflow now defaults to **manual** migration. In explicit `runner` mode,
+`scripts/check_migration_inputs.py` rejects private networking on a standard
+GitHub-hosted runner before installing dependencies or connecting. A self-hosted
+runner must still have verified DNS/routing; its label alone proves no connectivity.
+Do not set `MIGRATION_DATABASE_NETWORK=public` to bypass this check for a private
+server. There are no automatic connection retries or fallback migrations.
 
 `.github/workflows/deploy.yml` is the sole deployment workflow. The portal-generated
 push deployment has been removed because it bypassed CI, environment approval,
@@ -166,9 +191,11 @@ and migrations. Do not re-enable it through Deployment Center.
 3. Dispatch **Deploy Azure production** from `main`. After that SHA passes CI,
    the environment reviewer confirms the preparation above before allowing the
    migration job. Both migration and deployment jobs use the protected environment.
-   Keep `migration_mode=runner` (the default) and leave
-   `migrated_sha` empty. Review queued runs to avoid deploying an obsolete commit.
-4. The migration job installs dependencies and runs
+   For the current private server, first perform the manual procedure below, then
+   use `migration_mode=manual` (the default) with its recorded `migrated_sha`.
+   Use `runner` with an empty `migrated_sha` only on a verified network path.
+   Review queued runs to avoid deploying an obsolete commit.
+4. In runner mode, the migration job installs dependencies and runs
    `python -m flask --app app:create_app deploy-upgrade` with the protected
    `MIGRATION_DATABASE_URL` secret; no Azure login is involved in migrations.
    This command holds transaction advisory lock `20261001`, sets a 5-second DDL
@@ -180,6 +207,8 @@ and migrations. Do not re-enable it through Deployment Center.
    mismatch, and never migrate in web-process startup hooks.
    `db.create_all()` and direct `flask db upgrade` are not production migration
    paths; `deploy-upgrade` is the only supported production migration command.
+   In manual mode, the job verifies the attested SHA matches the release; it does
+   not connect to PostgreSQL or run migrations again.
 5. Only after migration approval/success does the deployment job check build
    automation with the publish profile. Only tracked `app/`, `migrations/`,
    `requirements.txt`, and `startup.sh` from the
@@ -200,7 +229,7 @@ against production or the migration database.
 
 ## Manual migration for private database networking
 
-Use this only when the deployment runner cannot reach Flexible Server. The trusted
+**Use this procedure for the current private Flexible Server.** The trusted
 machine needs private network/VPN connectivity, working private DNS for the
 canonical server hostname, Python 3.13, application dependencies, and current CA
 roots. No App Service publish profile or Azure authentication is needed there.
@@ -220,12 +249,17 @@ roots. No App Service publish profile or Azure authentication is needed there.
    ```bash
    set -euo pipefail
    set +x
+   python3.13 -m venv .migration-venv
+   source .migration-venv/bin/activate
+   python -m pip install -r requirements.txt
+   python -m pip check
    export APP_ENV=production FLASK_SKIP_DOTENV=1 FLASK_DEBUG=0
    export SESSION_COOKIE_SECURE=true PROXY_FIX_X_FOR=0
    export TRUSTED_HOSTS='<same comma-separated hostnames as App Service>'
    export DATABASE_URL="${MIGRATION_DATABASE_URL:?Supply the protected migration URL}"
    export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
    unset TEST_DATABASE_URL
+   python -m flask --app app:create_app check-db
    python -m flask --app app:create_app deploy-upgrade
    unset DATABASE_URL MIGRATION_DATABASE_URL SECRET_KEY
    ```
@@ -234,6 +268,10 @@ roots. No App Service publish profile or Azure authentication is needed there.
    `sslmode=verify-full` and the same server/database/role. The temporary signing
    key serves only this CLI process. A nonzero exit means **stop**; do not deploy.
    The same lock, transaction, timeouts, and migration-head checks run here.
+   `check-db` is read-only: success verifies connection/TLS/authentication, not DDL
+   privileges or a migrated schema. Only a successful `deploy-upgrade` counts as
+   migration evidence. Use a VM on the linked VNet or an approved VPN/peered network
+   with working DNS; a normal Cloud Shell or workstation is not automatically on it.
 4. Record the full commit SHA, successful exit and `Database upgraded to the release
    head.` message, database target (without credentials), operator, and time in the
    protected release record. Close the credential-bearing shell even after failure.
@@ -251,6 +289,37 @@ roots. No App Service publish profile or Azure authentication is needed there.
 There is no automatic fallback to manual mode on migration failure. If SCM also
 uses private access restrictions, deployment still needs a runner that can reach
 SCM; manual database migration does not bypass those restrictions.
+
+## Safe failure diagnostics and public-network troubleshooting
+
+`check-db` and `deploy-upgrade` print a fixed failure category and action hint.
+They never print the database URL, user/password, SQL, bound parameters, signing
+key, driver error text, or traceback. SQLSTATE is used where available; connection
+failures without SQLSTATE use known libpq message patterns in memory only. An
+unrecognized connection failure remains `database-connection`, not a guessed cause.
+
+| Category | Action before retrying |
+| --- | --- |
+| `dns-resolution` | Verify the canonical PostgreSQL hostname. On private networks verify the DNS zone link and VPN/peering DNS forwarding. A DNS error alone does not prove networking mode; verify it in the portal. |
+| `network-timeout` / `database-connection` | Check server readiness, port 5432 routing, firewall and outbound access. Do not retry the current private server from a standard GitHub-hosted runner. |
+| `tls-verification` | Keep `sslmode=verify-full`. Use a readable CA bundle at the `sslrootcert` path on the migration machine, containing current trusted roots; use the canonical hostname, not an IP. |
+| `postgres-authentication` | Verify password authentication is enabled and the migration role/password is current. URL-encode credential components; never paste the URL into logs. |
+| `database-privileges` | Have the database administrator verify CONNECT, schema USAGE/CREATE, and ownership or role membership for ALTER operations and the Alembic version table. Runtime DML permissions alone are insufficient. No application objects should be created manually. |
+| `network-access-policy` | PostgreSQL rejected access through its host/network policy. Review authorized network/firewall settings; do not enable broad public access. |
+| `migration-timeout` | Review contention or long statements; the existing 5-second DDL lock and 120-second statement limits remain enforced. |
+| `alembic-migration` | Review the checked-out migration chain and existing database revision using protected operator tooling. Do not stamp, auto-downgrade, or recreate tables. |
+
+If the server is deliberately changed to **public** networking later, confirm that
+mode in the portal, authorize the runner's actual outbound address through the
+database firewall, and set `MIGRATION_DATABASE_NETWORK=public` before selecting
+`runner`. Prefer a runner with a controlled egress address over broad firewall
+exceptions. Check TLS, credentials and DDL-role privileges using the categories
+above; do not treat changing to public access as a fix for an authentication error.
+
+The observed old generic failure cannot reveal whether libpq failed at DNS or
+connect time. The confirmed private-network/hosted-runner mismatch must be fixed
+first. Role privileges and the masked GitHub migration secret remain operator
+checks; successful network access does not establish that those values are correct.
 
 ## Logging and validation limits
 
@@ -271,6 +340,7 @@ verification. Repository preparation does not dispatch workflows or mutate Azure
 References: [App Service GitHub deployment and publish profiles](https://learn.microsoft.com/en-us/azure/app-service/deploy-github-actions),
 [Web Apps Deploy action limitations](https://github.com/Azure/webapps-deploy),
 [SCM settings API](https://github.com/projectkudu/kudu/wiki/REST-API#settings),
+[Flexible Server private networking](https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-private),
 [Python App Service configuration](https://learn.microsoft.com/en-us/azure/app-service/configure-language-python),
 [Flexible Server TLS](https://learn.microsoft.com/en-us/azure/postgresql/security/security-tls-how-to-connect),
 and [Flask-SocketIO deployment](https://flask-socketio.readthedocs.io/en/latest/deployment.html).

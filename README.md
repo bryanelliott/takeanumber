@@ -383,8 +383,12 @@ the **Ruff and pytest** check before merging.
 The **Deploy Azure production** workflow is manually dispatched from `main`,
 reruns CI, and uses the protected `production` environment with
 `AZURE_WEBAPP_PUBLISH_PROFILE` and `azure/webapps-deploy@v3`.
-By default it runs `deploy-upgrade` using `MIGRATION_DATABASE_URL` before deploying
-a source ZIP; migration failure blocks deployment. No Azure CLI login is required.
+The current database uses private VNet access, so deployment defaults to manual
+migration from an authorized network, followed by approval of the same commit SHA.
+Explicit runner mode runs `deploy-upgrade` using `MIGRATION_DATABASE_URL` mapped to
+`DATABASE_URL`; use the DDL-capable migration role, not the runtime role. Private
+databases are blocked on standard GitHub-hosted runners. Migration failure blocks
+deployment. No Azure CLI login is required.
 Production startup is **`bash startup.sh`**, running one threaded Gunicorn worker.
 Use one App Service instance and Azure Database for PostgreSQL Flexible Server.
 
@@ -409,6 +413,9 @@ backward-compatible migrations use the routine live deployment path. Do not run
 migrations at startup, run tests against production, or automatically downgrade
 after a failed deployment. See the runbook for backup, approval, verification,
 rollback, proxy configuration, logging, and required Azure validation.
+`check-db` provides a read-only connection check. Both commands report sanitized
+failure categories for DNS, network, TLS, authentication, privileges, and migration
+errors; see the runbook for corrective steps. Never print connection strings.
 
 ## Migrations
 

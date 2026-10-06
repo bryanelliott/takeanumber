@@ -6,8 +6,8 @@ on:
       migration_mode:
         description: Run migrations here, or confirm a reviewed migration from a trusted machine
         type: choice
-        options: [runner, manual]
-        default: runner
+        options: [manual, runner]
+        default: manual
         required: true
       migrated_sha:
         description: Manual mode only - full commit SHA successfully migrated (reviewer must verify)
@@ -47,13 +47,8 @@ jobs:
         env:
           MIGRATION_MODE: ${{ inputs.migration_mode }}
           MIGRATED_SHA: ${{ inputs.migrated_sha }}
-        run: |
-          set -euo pipefail
-          case "$MIGRATION_MODE" in
-            runner) test -z "$MIGRATED_SHA" ;;
-            manual) test "$MIGRATED_SHA" = "$GITHUB_SHA" ;;
-            *) exit 1 ;;
-          esac
+          MIGRATION_DATABASE_NETWORK: ${{ vars.MIGRATION_DATABASE_NETWORK || 'private' }}
+        run: python scripts/check_migration_inputs.py
       - name: Install release dependencies in an isolated environment
         if: inputs.migration_mode == 'runner'
         shell: bash
@@ -69,6 +64,7 @@ jobs:
           FLASK_SKIP_DOTENV: '1'
           SESSION_COOKIE_SECURE: 'true'
           TRUSTED_HOSTS: ${{ vars.APP_TRUSTED_HOSTS }}
+          # Intentional: the CLI reads DATABASE_URL; this must be the DDL role, not runtime.
           DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
         run: |
           set -euo pipefail
