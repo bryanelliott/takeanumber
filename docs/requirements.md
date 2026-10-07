@@ -284,8 +284,12 @@ The application should:
 
 Production target:
 
-- Azure App Service
-- Azure Database for PostgreSQL Flexible Server
+- Azure App Service Linux, Python 3.13, one instance and one Gunicorn worker
+- Azure SQL Database through SQLAlchemy/Alembic and pyodbc / ODBC Driver 18
+- One SQL-authenticated application user and one `DATABASE_URL` for runtime and migrations
+- Encrypted, certificate-verified SQL connections
+- Publish-profile deployment after CI; migrations run in App Service startup before Gunicorn
+- No production database access from GitHub Actions
 
 Source control:
 

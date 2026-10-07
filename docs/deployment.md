@@ -1,346 +1,297 @@
-# CI/CD and Azure operations (Milestone 10)
+# Azure SQL deployment and operations
 
-This prepares deployment; it does not provision Azure resources or deploy them.
-Milestone 9 metrics remain unimplemented pending the peak-history decision.
+## Release architecture
 
-## Continuous integration
+The normal release is **CI -> publish-profile deploy -> App Service `deploy-upgrade`
+using `DATABASE_URL` -> Gunicorn**. Use Azure App Service Linux, Python 3.13,
+one App Service instance and one threaded Gunicorn worker. The database is Azure
+SQL Database, optionally General Purpose Serverless with auto-pause.
 
-`.github/workflows/ci.yml` runs on pull requests and pushes to `main`, and is reused
-by deployment. Python 3.13 installs the existing pinned `requirements.txt`, then
-runs `pip check`, Ruff, `pytest -m "not browser"`, and a Bash syntax check.
-The `browser` marker covers only optional live browser/DOM tests, which are run
-manually with `pytest -m browser` and are not part of the deployment gate because
-hosted Chromium behavior can cause runner-specific failures. All unit, integration,
-database, migration, auth, queue, Socket.IO, and production configuration tests
-remain required. PostgreSQL 17 is a disposable
-service mapped to `127.0.0.1:55433`. Its database/role are `takeanumber_test`; its
-public CI password is not a credential for any persistent database. Existing test
-guards, migration round-trips, and actual database/role checks remain in force.
-PR jobs receive no deployment secrets or deployment runner access.
+GitHub never connects to the production database. It runs Ruff and all required
+pytest tests in disposable SQL Server 2022/Python 3.13/ODBC Driver 18 containers.
+Only the optional `browser` tests are excluded (`pytest -m "not browser"`);
+`pytest -m browser` runs those manually. Database, migration, authentication,
+queue, settings, Socket.IO and production configuration tests remain mandatory.
 
-Require **Ruff and pytest** in branch protection for `main`. Review workflow
-changes and periodically review action versions and full-commit pins. Never execute PR
-code with deployment permissions through `pull_request_target`.
+There is one application database user and one App Service `DATABASE_URL` for
+both migrations and requests. SQL password authentication and the App Service
+publish profile require no Azure CLI login, service principal, OIDC, or Entra
+integration. No migration machine or database access from GitHub is needed.
 
-## Azure runtime
+## 1. Create the empty Azure SQL database
 
-Provision a Linux Azure App Service with Python 3.13 and Azure Database for
-PostgreSQL **Flexible Server** (PostgreSQL 17 matches CI). Use private database
-networking, App Service VNet integration, and working private DNS. Provision the
-database and roles through platform setup; application tables/indexes/constraints
-are created only by Alembic migrations.
+In Azure Portal:
 
-Read-only Azure inspection on **2026-10-06** confirmed that the current
-`takeanumber-server.postgres.database.azure.com` has public network access
-**Disabled**, a delegated subnet in `vnet-bopaypza`, and the private DNS zone
-`privatelink.postgres.database.azure.com` linked to that VNet with status Completed.
-This is private VNet access, not a public endpoint with a missing firewall rule.
-The workflow's standard GitHub-hosted runner has no configured private network
-path. Use the manual migration procedure below for this deployment. A working
-App Service connection does not give a GitHub runner that network access.
-Recheck Portal → PostgreSQL Flexible Server → Networking if infrastructure changes.
+1. Create **SQL database**, named `takeanumber`, in the App Service region.
+2. Create/select an **Azure SQL logical server**. Enable SQL authentication and
+   create a provisioning administrator with a generated password. Do not enable
+   an Entra-only authentication policy. The provisioning administrator is used
+   only for resource/user setup; it is never the application's credential.
+3. Under **Compute + storage**, choose General Purpose Serverless if desired.
+   Review region availability, minimum/maximum vCores, storage and auto-pause
+   delay/cost before creating the resource. Start with a blank database, no sample data.
+4. Under server **Networking**, enable public access for **Selected networks**.
+   Add each outbound IP address required by App Service (App Service -> Properties ?
+   Outbound IP addresses and Additional outbound IP addresses). Add only the
+   administrator's current client IP temporarily for setup. Leave **Allow Azure
+   services and resources to access this server** disabled; it is broader than this app.
+5. App Service must resolve `<server>.database.windows.net` and reach TCP 1433.
+   Set the logical server **Connection policy** to **Proxy** for the simplest
+   outbound firewall policy. Redirect policy instead requires the documented
+   additional regional SQL ports. Verify any existing VNet integration, route-all,
+   NSG/firewall and DNS settings permit this new endpoint. No private DNS is needed.
+6. Keep the server's minimum TLS version at least 1.2. Leave certificate
+   validation enabled in the application. Review backup retention and restore
+   requirements for the application's data.
 
-Configure the app for **one instance**, with automatic scaling/autoscale disabled.
-Do not attach another serving slot to the same live queue. Socket.IO rooms and
-authentication limits are process-local; additional workers/instances need a
-separate architecture change. No Redis is introduced.
+This change does not provision Azure resources, copy data, or delete the previous
+database. Start with a **new empty database**. The initial baseline is not an
+upgrade path from the retired database engine or its migration revisions.
 
-Enable HTTPS Only, minimum inbound TLS 1.2, Always On on a supporting plan, and
-`/health` health checks. This endpoint is liveness only, not database readiness.
-Set the startup command to **`bash startup.sh`**. The tracked LF-terminated script
-launches Gunicorn on `0.0.0.0:8000` with `gthread`, **one worker**, 100 threads, and
-a 120-second timeout; `simple-websocket` supplies WebSocket support. Never use
-`run.py`, Flask's development server, or migration commands for production startup.
+## 2. Create the single application database user
 
-Set `SCM_DO_BUILD_DURING_DEPLOYMENT=true` for App Service/Oryx to build the source ZIP
-using `requirements.txt`. Do not enable run-from-package for this source-build
-deployment. Verify WebSocket upgrade, polling, and reconnect on the provisioned
-Linux app and any upstream proxy.
+Open the database's **Query editor** with SQL authentication as the provisioning
+administrator, or use an authorized SQL client with encrypted, verified TLS.
+Connect **directly to `takeanumber`, not `master`**. Execute once, replacing the
+password placeholder with a generated strong secret (escape `'` as `''` in SQL):
 
-Required App Service application settings (values configured outside source):
+```sql
+CREATE USER [takeanumber_app]
+    WITH PASSWORD = '<generated-application-password>', DEFAULT_SCHEMA = [dbo];
+GRANT CONNECT, CREATE TABLE TO [takeanumber_app];
+GRANT CONTROL ON SCHEMA::[dbo] TO [takeanumber_app];
 
-| Name | Value/purpose |
-| --- | --- |
-| `APP_ENV` | `production`; startup refuses any other value. |
-| `SECRET_KEY` | Stable generated secret, at least 32 characters, in protected settings or a Key Vault reference. Rotation invalidates instructor sessions and browser identity cookies. |
-| `DATABASE_URL` | Runtime role URL for Flexible Server, with verified TLS; URL-encode credentials. |
-| `SESSION_COOKIE_SECURE` | `true`. |
-| `TRUSTED_HOSTS` | Comma-separated exact public hostnames. Include the App Service default hostname if used for health checks. No scheme, port, path, or wildcard. |
-| `PROXY_FIX_X_FOR` | `0` initially; see proxy verification below. |
-| `SCM_DO_BUILD_DURING_DEPLOYMENT` | `true`. |
-| `FLASK_DEBUG` | Omit or `0`; never enable in production. |
-
-Existing optional `AUTH_RATE_LIMIT`, `AUTH_RATE_WINDOW_SECONDS`, and
-`STUDENT_COOKIE_MAX_AGE` retain defaults of 20, 900, and 15552000 respectively.
-Do not set `TEST_DATABASE_URL` in production. `.env` is neither packaged nor loaded
-when `APP_ENV=production`. Insecure cookies, testing/debug, short/placeholder
-secrets, missing allowed hosts, and unverified database TLS fail validation.
-
-Database URL shape, placeholders only:
-
-```text
-postgresql+psycopg://<role>:<URL-encoded-password>@<server>.postgres.database.azure.com/<database>?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt
+SELECT DB_NAME() AS database_name,
+       is_read_committed_snapshot_on
+FROM sys.databases WHERE name = DB_NAME();
 ```
 
-Use the canonical Flexible Server hostname even with private networking. Maintain
-the CA bundle on **both** the migration runner and App Service image with the
-currently required Microsoft root certificates. A separately maintained PEM bundle
-may be used instead. Do not pin leaf/intermediate certificates, disable TLS
-verification, or add libpq host/service overrides to the URL. Runtime and migration
-URLs must target the same server/database. The migration role needs schema DDL
-rights; a separate runtime role needs table access and default grants on future
-migration-created objects. Verify those grants after migration. Database password
-authentication is independent of App Service publishing credentials.
+Azure SQL supports a contained SQL user with a password; no separate server login
+or identity integration is necessary. Remove the temporary administrator firewall
+rule when setup is complete. Protect this one application password in App Service.
 
-Production trusts one `X-Forwarded-Proto` hop for App Service TLS termination, but
-never forwarded Host/port/prefix. Confirm ingress overwrites the scheme header and
-the backend has no public bypass. Client IP forwarding stays untrusted at
-`PROXY_FIX_X_FOR=0`, so callers behind that proxy share a rate limit. After verifying
-the actual ingress chain, configure the exact trusted client-address hop count
-(1–3 supported) and test that a forged incoming `X-Forwarded-For` cannot select the
-effective address. Reassess when adding Front Door or another proxy. Verify HTTPS
-QR URLs, secure cookies, CSRF, and same-origin Socket.IO on the deployed hostname.
+The database is dedicated to this application. `CONTROL` on `dbo` grants SELECT,
+INSERT, UPDATE, DELETE, REFERENCES, ALTER and metadata access to current and future
+schema objects, including indexes, constraints and `alembic_version`. Database
+`CREATE TABLE` permits Alembic to create tables in that schema. These grants allow
+first initialization and future table/index/constraint migrations without
+`db_owner`, server administration, or user-management rights. A future migration
+introducing views/procedures/types needs its corresponding CREATE permission
+reviewed explicitly; the current schema contains none.
 
-## GitHub environment and publish profile
+`sp_getapplock` uses `@DbPrincipal='public'`; every database user belongs to public,
+so no additional elevated lock permission is required. Both app and migration use
+the same user. CI provisions an equivalent non-owner test user and exercises these
+permissions, including DDL, DML and migration locking.
 
-Create the **`production`** environment with required reviewers, prevent self-review
-where supported, and restrict deployments to protected `main`. If the repository
-plan cannot enforce those controls, establish an equivalent approval gate before
-enabling deployment. Deployment is manual, accepts no arbitrary source ref, reruns
-CI on the selected main commit, and serializes runs without cancelling migrations.
+Azure SQL normally enables READ_COMMITTED_SNAPSHOT. The SELECT above must return
+`1`; local tests enable it explicitly. If an existing database returns `0`, the
+provisioning administrator should enable it before any application sessions open:
 
-In the Azure portal, enable **SCM Basic Auth Publishing Credentials** for the target
-app and download its production publish profile. For Linux, set
-`WEBSITE_WEBDEPLOY_USE_SCM=true` before downloading if required by the portal.
-Store the complete XML contents as the `production` environment secret
-`AZURE_WEBAPP_PUBLISH_PROFILE`. Treat it as a password: never commit it, include it
-in artifacts, or print it; rotate/reset publishing credentials and replace the
-secret when needed. FTP publishing is not needed. If platform policy disables SCM
-basic authentication, an administrator must allow it before this method can work.
+```sql
+ALTER DATABASE [takeanumber] SET READ_COMMITTED_SNAPSHOT ON;
+```
 
-The workflow uses `azure/webapps-deploy@v3` with that profile. It needs no Azure CLI
-installation or authenticated Azure session. Configure the Python stack and
-**`bash startup.sh`** startup command in the portal before approving deployment;
-the action's `startup-command` input is unsupported with publish profiles.
-The preflight script reads SCM `/api/settings` using the same profile, requires
-`SCM_DO_BUILD_DURING_DEPLOYMENT=true`, and rejects run-from-package. It fails closed
-on authentication/network errors without printing credentials or settings.
+See [contained SQL users](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-user-transact-sql),
+[schema permissions](https://learn.microsoft.com/en-us/sql/t-sql/statements/grant-schema-permissions-transact-sql)
+and [application locks](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sp-getapplock-transact-sql).
 
-Required GitHub configuration (exact names consumed by the workflow):
+## 3. Configure App Service
 
-| Scope/type | Name | Purpose |
-| --- | --- | --- |
-| Repository variable (optional) | `AZURE_DEPLOY_RUNNER_LABELS` | JSON array selecting an isolated ephemeral Linux deployment runner, e.g. `["self-hosted", "linux", "x64", "azure-deploy"]`. Defaults to `["ubuntu-24.04"]`; repository scope is required for runner selection. |
-| `production` variable | `AZURE_WEBAPP_NAME` | Existing target web app name. |
-| `production` variable | `APP_HEALTH_URL` | Exact target HTTPS URL ending in `/health`. |
-| `production` variable | `APP_TRUSTED_HOSTS` | Same host list as runtime `TRUSTED_HOSTS`, for the CLI factory. |
-| `production` variable | `MIGRATION_DATABASE_NETWORK` | `private` (default and current deployment). Use `public` only after verifying that the server really exposes public access and the runner is allowed through its firewall. |
-| `production` secret | `AZURE_WEBAPP_PUBLISH_PROFILE` | Complete production App Service publish-profile XML. |
-| `production` secret | `MIGRATION_DATABASE_URL` | DDL-capable URL with verified TLS; same server/database as runtime. |
+In **Configuration -> General settings**, select Linux / Python 3.13, startup
+command **`bash startup.sh`**, enable WebSockets, and keep one App Service instance.
+Use HTTPS Only, a minimum TLS version of 1.2 or newer, and HTTP/2 as supported.
+Disable FTP publishing. Enable **SCM Basic Auth Publishing Credentials** for the
+publish-profile deployment; restrict access to the profile. No Azure login action
+is used. Avoid an alternate portal-generated deployment workflow that bypasses CI.
 
-Runtime signing/database secrets live in App
-Service or Key Vault references, not ZIPs. The migration CLI generates a temporary
-signing key because it serves no requests; never reuse it as the runtime key.
+In **Environment variables -> App settings**, configure:
 
-The migration command requires only Python 3.13, application dependencies, current
-CA certificates, the production configuration below, and network/DNS access to
-Flexible Server (normally TCP 5432). It authenticates directly using the database
-password in `MIGRATION_DATABASE_URL`, mapped to `DATABASE_URL` for the CLI.
-This mapping is intentional: the app factory reads `DATABASE_URL`, not
-`MIGRATION_DATABASE_URL`. The GitHub secret must contain the **migration role**
-with schema DDL privileges and ownership/membership needed to alter existing
-objects, not the restricted App Service runtime role. GitHub masks the value, so
-`DATABASE_URL=***` confirms neither which role it contains nor its privileges.
-Verify or replace that secret from the approved credential store; its saved value
-cannot be read back through GitHub. Do not grant DDL to the runtime role to fix this.
-
-The migration job uses checkout/setup-python and Bash to prepare that command;
-it has no publish-profile input or Azure authentication step. The separate
-deployment job also uses Git, Bash, curl, setup-python, and HTTPS
-access to App Service SCM, GitHub, package downloads, and the public health URL.
-GitHub-hosted runners work only when the database firewall/routing permits them.
-They cannot normally resolve/reach a private Flexible Server endpoint. Use an
-isolated ephemeral runner with private DNS/routing, or the manual procedure below;
-do not expose a private database just to make this workflow pass. Restrict any
-self-hosted runner group to trusted deployment workflows, never PR code or
-untrusted repositories, and recreate runners after each job. CI always uses
-GitHub-hosted Ubuntu and its disposable database.
-
-The workflow now defaults to **manual** migration. In explicit `runner` mode,
-`scripts/check_migration_inputs.py` rejects private networking on a standard
-GitHub-hosted runner before installing dependencies or connecting. A self-hosted
-runner must still have verified DNS/routing; its label alone proves no connectivity.
-Do not set `MIGRATION_DATABASE_NETWORK=public` to bypass this check for a private
-server. There are no automatic connection retries or fallback migrations.
-
-`.github/workflows/deploy.yml` is the sole deployment workflow. The portal-generated
-push deployment has been removed because it bypassed CI, environment approval,
-and migrations. Do not re-enable it through Deployment Center.
-
-## Release and migration procedure
-
-1. Review the exact commit/migrations, CI results, currently deployed revision,
-   and runtime/migration database targets. Verify a recent restorable Flexible
-   Server backup/PITR window and test the change and recovery plan on a restored
-   nonproduction database with representative volume.
-2. This workflow requires **backward-compatible, transactional, expand-first
-   migrations**: the old application stays live during migration. Dropping/renaming
-   columns, lengthy backfills, autocommit, and `CREATE INDEX CONCURRENTLY` require
-   a separately reviewed maintenance procedure. Do not approve the routine path
-   for them. End live help sessions before disruptive maintenance.
-3. Dispatch **Deploy Azure production** from `main`. After that SHA passes CI,
-   the environment reviewer confirms the preparation above before allowing the
-   migration job. Both migration and deployment jobs use the protected environment.
-   For the current private server, first perform the manual procedure below, then
-   use `migration_mode=manual` (the default) with its recorded `migrated_sha`.
-   Use `runner` with an empty `migrated_sha` only on a verified network path.
-   Review queued runs to avoid deploying an obsolete commit.
-4. In runner mode, the migration job installs dependencies and runs
-   `python -m flask --app app:create_app deploy-upgrade` with the protected
-   `MIGRATION_DATABASE_URL` secret; no Azure login is involved in migrations.
-   This command holds transaction advisory lock `20261001`, sets a 5-second DDL
-   lock timeout and 120-second per-statement timeout, runs Alembic on the same
-   connection/outer transaction, and checks the resulting single migration head.
-   Competition, timeout, failure, or revision mismatch blocks code deployment and
-   rolls back transactional changes. All production migration operators must use
-   this command to cooperate with the lock. Never use `db stamp` to disguise a
-   mismatch, and never migrate in web-process startup hooks.
-   `db.create_all()` and direct `flask db upgrade` are not production migration
-   paths; `deploy-upgrade` is the only supported production migration command.
-   In manual mode, the job verifies the attested SHA matches the release; it does
-   not connect to PostgreSQL or run migrations again.
-5. Only after migration approval/success does the deployment job check build
-   automation with the publish profile. Only tracked `app/`, `migrations/`,
-   `requirements.txt`, and `startup.sh` from the
-   tested SHA enter the source ZIP. `.env`, `.git`, tests, local virtual environments,
-   and runner secrets are excluded. App Service builds and deploys this package.
-6. The job checks `/health`. Then verify database-backed login, ownership checks,
-   session start/end, HTTPS QR Client View, and two-browser Socket.IO updates.
-   Confirm the commit in App Service deployment history. Liveness alone cannot
-   establish database readiness or that the right release is serving.
-
-If migration fails, code deployment does not run. Review the database revision
-before retrying. If build preflight/deployment/health checks fail **after** migration, the schema
-may already be upgraded. Restore the previous compatible application artifact or
-roll forward after review; never automatically downgrade schema or retry against
-another database. Database restore requires the Flexible Server recovery procedure
-and may require coordinated configuration changes and downtime. Never run pytest
-against production or the migration database.
-
-## Manual migration for private database networking
-
-**Use this procedure for the current private Flexible Server.** The trusted
-machine needs private network/VPN connectivity, working private DNS for the
-canonical server hostname, Python 3.13, application dependencies, and current CA
-roots. No App Service publish profile or Azure authentication is needed there.
-
-1. Complete the backup, compatibility, target-database, and CI review above for
-   the exact release commit on protected `main`. Coordinate with other operators:
-   allow no competing release between the manual migration and code deployment.
-   The database advisory lock covers the migration transaction, not that interval.
-2. On the trusted machine, check out that exact full commit SHA in a clean release
-   directory. Create/activate an isolated Python environment and install
-   `requirements.txt`; run `python -m pip check`. Supply the same protected migration
-   database credential through an approved secret channel. GitHub environment
-   secrets cannot be downloaded after saving them; retain the credential in your
-   approved secret store. Do not paste it into command history, logs, or source.
-3. In a Bash session with `MIGRATION_DATABASE_URL` securely injected, run:
-
-   ```bash
-   set -euo pipefail
-   set +x
-   python3.13 -m venv .migration-venv
-   source .migration-venv/bin/activate
-   python -m pip install -r requirements.txt
-   python -m pip check
-   export APP_ENV=production FLASK_SKIP_DOTENV=1 FLASK_DEBUG=0
-   export SESSION_COOKIE_SECURE=true PROXY_FIX_X_FOR=0
-   export TRUSTED_HOSTS='<same comma-separated hostnames as App Service>'
-   export DATABASE_URL="${MIGRATION_DATABASE_URL:?Supply the protected migration URL}"
-   export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
-   unset TEST_DATABASE_URL
-   python -m flask --app app:create_app check-db
-   python -m flask --app app:create_app deploy-upgrade
-   unset DATABASE_URL MIGRATION_DATABASE_URL SECRET_KEY
-   ```
-
-   Use a CA bundle path valid on this machine in `sslrootcert`, keeping
-   `sslmode=verify-full` and the same server/database/role. The temporary signing
-   key serves only this CLI process. A nonzero exit means **stop**; do not deploy.
-   The same lock, transaction, timeouts, and migration-head checks run here.
-   `check-db` is read-only: success verifies connection/TLS/authentication, not DDL
-   privileges or a migrated schema. Only a successful `deploy-upgrade` counts as
-   migration evidence. Use a VM on the linked VNet or an approved VPN/peered network
-   with working DNS; a normal Cloud Shell or workstation is not automatically on it.
-4. Record the full commit SHA, successful exit and `Database upgraded to the release
-   head.` message, database target (without credentials), operator, and time in the
-   protected release record. Close the credential-bearing shell even after failure.
-5. Dispatch **Deploy Azure production** from `main` with `migration_mode=manual`
-   and `migrated_sha` equal to that full SHA. The workflow reruns CI and rejects a
-   SHA different from its tested `github.sha`. If `main` has advanced, stop and
-   review/migrate the new release; do not substitute an unverified SHA.
-6. Before approving the `production` environment, the reviewer must verify that
-   migration evidence and database target match this release, and that no other
-   migration intervened. Manual mode skips the runner's migration step; the SHA
-   check is an attestation check, not a remote database readiness check. Missing or
-   failed migration evidence must block approval. The build preflight, tracked-file
-   packaging, publish-profile deployment, and health checks still run normally.
-
-There is no automatic fallback to manual mode on migration failure. If SCM also
-uses private access restrictions, deployment still needs a runner that can reach
-SCM; manual database migration does not bypass those restrictions.
-
-## Safe failure diagnostics and public-network troubleshooting
-
-`check-db` and `deploy-upgrade` print a fixed failure category and action hint.
-They never print the database URL, user/password, SQL, bound parameters, signing
-key, driver error text, or traceback. SQLSTATE is used where available; connection
-failures without SQLSTATE use known libpq message patterns in memory only. An
-unrecognized connection failure remains `database-connection`, not a guessed cause.
-
-| Category | Action before retrying |
+| Setting | Value |
 | --- | --- |
-| `dns-resolution` | Verify the canonical PostgreSQL hostname. On private networks verify the DNS zone link and VPN/peering DNS forwarding. A DNS error alone does not prove networking mode; verify it in the portal. |
-| `network-timeout` / `database-connection` | Check server readiness, port 5432 routing, firewall and outbound access. Do not retry the current private server from a standard GitHub-hosted runner. |
-| `tls-verification` | Keep `sslmode=verify-full`. Use a readable CA bundle at the `sslrootcert` path on the migration machine, containing current trusted roots; use the canonical hostname, not an IP. |
-| `postgres-authentication` | Verify password authentication is enabled and the migration role/password is current. URL-encode credential components; never paste the URL into logs. |
-| `database-privileges` | Have the database administrator verify CONNECT, schema USAGE/CREATE, and ownership or role membership for ALTER operations and the Alembic version table. Runtime DML permissions alone are insufficient. No application objects should be created manually. |
-| `network-access-policy` | PostgreSQL rejected access through its host/network policy. Review authorized network/firewall settings; do not enable broad public access. |
-| `migration-timeout` | Review contention or long statements; the existing 5-second DDL lock and 120-second statement limits remain enforced. |
-| `alembic-migration` | Review the checked-out migration chain and existing database revision using protected operator tooling. Do not stamp, auto-downgrade, or recreate tables. |
+| `APP_ENV` | `production` |
+| `DATABASE_URL` | The one SQLAlchemy URL shown below |
+| `SECRET_KEY` | Stable randomly generated secret, at least 32 characters; e.g. 32 random bytes as hex |
+| `SESSION_COOKIE_SECURE` | `true` |
+| `TRUSTED_HOSTS` | Exact comma-separated public hostnames, no scheme, paths or wildcards |
+| `FLASK_SKIP_DOTENV` | `1` (also exported by startup) |
+| `SCM_DO_BUILD_DURING_DEPLOYMENT` | `true` (required for ZIP dependency installation) |
+| `WEBSITES_CONTAINER_START_TIME_LIMIT` | `600` seconds to allow resume, migration and startup |
+| `PROXY_FIX_X_FOR` | `0` initially; change only after verifying the trusted ingress chain |
 
-If the server is deliberately changed to **public** networking later, confirm that
-mode in the portal, authorize the runner's actual outbound address through the
-database firewall, and set `MIGRATION_DATABASE_NETWORK=public` before selecting
-`runner`. Prefer a runner with a controlled egress address over broad firewall
-exceptions. Check TLS, credentials and DDL-role privileges using the categories
-above; do not treat changing to public access as a fix for an authentication error.
+Do not enable Flask debug/testing or install `TEST_DATABASE_URL` in production.
+Existing optional `AUTH_RATE_LIMIT` (20), `AUTH_RATE_WINDOW_SECONDS` (900), and
+`STUDENT_COOKIE_MAX_AGE` (15552000 seconds) retain their defaults and validation.
+App Service terminates HTTPS; the app trusts one forwarded scheme header and
+never trusts a forwarded Host header. Verify client IP handling before opting into
+forwarded client-address trust, particularly when a gateway/CDN is added.
 
-The observed old generic failure cannot reveal whether libpq failed at DNS or
-connect time. The confirmed private-network/hosted-runner mismatch must be fixed
-first. Role privileges and the masked GitHub migration secret remain operator
-checks; successful network access does not establish that those values are correct.
+Use a normal **App setting**, not the Portal's typed SQL connection-string field:
 
-## Logging and validation limits
+```text
+mssql+pyodbc://takeanumber_app:<URL-encoded-password>@<server>.database.windows.net:1433/takeanumber?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no
+```
 
-Gunicorn access logging remains off by default; error logs use warning level.
-SQLAlchemy hides bound parameters, and migration failures avoid printing sensitive
-exceptions. Do not enable SQL echo, request body/cookie capture, shell tracing, or
-verbose credential/SCM HTTP logging. The SCM preflight prints only its status.
-Application Insights instrumentation is not added. If enabling platform diagnostics,
-review access/retention and collect operational status, duration, and sanitized
-errors only; avoid names, browser identifiers, cookies, bodies, connection strings,
-and IP/geolocation enrichment. No student location collection is added.
+Percent-encode the username/password components, particularly `@`, `:`, `/`, `%`,
+`?`, `#` and `&`. Use the canonical server hostname, not an IP address. Store the
+complete URL only in the protected setting; never echo it, paste it into a workflow
+or include it in support logs. The application accepts only these three URL query
+options, requires Driver 18 and encryption, and rejects certificate bypass in
+production. It adds `ConnectRetryCount=0` itself to avoid hidden driver retry loops.
+The `TrustServerCertificate=yes` examples elsewhere are exclusively for local
+self-signed SQL Server containers, never Azure production.
 
-Local validation checks workflow syntax, Bash syntax, configuration, and migration
-transactions on the dedicated test database. Publishing credentials, SCM access, private
-routing, CA trust, Oryx builds, and real WebSockets require provisioned-environment
-verification. Repository preparation does not dispatch workflows or mutate Azure.
+Microsoft ODBC Driver 18 and trusted CA roots must be installed in the Linux runtime;
+`pip install pyodbc` alone does not install the native driver. The built-in App Service
+Linux Python images commonly include ODBC drivers, but verify **Driver 18** in the
+actual Python 3.13 image via Portal SSH before the first release:
 
-References: [App Service GitHub deployment and publish profiles](https://learn.microsoft.com/en-us/azure/app-service/deploy-github-actions),
-[Web Apps Deploy action limitations](https://github.com/Azure/webapps-deploy),
-[SCM settings API](https://github.com/projectkudu/kudu/wiki/REST-API#settings),
-[Flexible Server private networking](https://learn.microsoft.com/en-us/azure/postgresql/network/concepts-networking-private),
-[Python App Service configuration](https://learn.microsoft.com/en-us/azure/app-service/configure-language-python),
-[Flexible Server TLS](https://learn.microsoft.com/en-us/azure/postgresql/security/security-tls-how-to-connect),
-and [Flask-SocketIO deployment](https://flask-socketio.readthedocs.io/en/latest/deployment.html).
+```bash
+odbcinst -q -d
+```
+
+Startup also verifies Driver 18 through pyodbc and fails closed if missing. Do not
+silently fall back to Driver 17 or unverified TLS. If the chosen runtime image lacks
+18, resolve its native-driver installation using Microsoft's supported image/package
+instructions before release. The test image installs Driver 18 explicitly. Native
+package installation is an environment prerequisite, not a recurring migration step.
+See [App Service ODBC availability](https://learn.microsoft.com/en-us/sql/connect/python/mssql-django/deploy-azure-app-service)
+and [Linux Driver 18 installation](https://learn.microsoft.com/en-us/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server).
+
+Set App Service Health check to **`/health`**. It reports process liveness only and
+never opens a database connection, including requests with an instructor cookie.
+It is not a database readiness check. Always On can keep the web process warm;
+database-touching synthetic checks must not be used if auto-pause is desired.
+
+## 4. Configure GitHub once
+
+Create/protect the GitHub environment **`production`** with required reviewers and
+main-only deployment rules where supported. Require the CI **Ruff and pytest
+(SQL Server)** job for merging. Set:
+
+| Kind | Name | Value |
+| --- | --- | --- |
+| Environment secret | `AZURE_WEBAPP_PUBLISH_PROFILE` | Complete App Service publish-profile XML |
+| Environment variable | `AZURE_WEBAPP_NAME` | Target App Service name |
+| Environment variable | `APP_HEALTH_URL` | `https://<trusted-app-host>/health` |
+
+Download the profile in Portal after enabling SCM basic auth. Treat the XML as a
+credential; rotate/re-download it when publishing credentials change. The workflow
+uses `azure/webapps-deploy@v3`. Its SCM preflight verifies remote build automation;
+release ZIPs contain only tracked runtime files from the exact tested commit.
+The production database URL is **not** a GitHub secret or workflow input.
+Remove obsolete deployment inputs, database secrets and runner/network variables
+from the environment; only the table above is used now.
+
+## 5. First deployment to the empty database
+
+1. Finish database/user/firewall provisioning and App Service settings above.
+   Confirm the database contains no application tables or old Alembic history.
+2. Commit the reviewed SQL Server baseline and all port changes. Push to GitHub
+   and require CI to pass against its disposable database.
+3. Open Actions -> **Deploy Azure production** -> Run workflow -> **main**. Approve
+   the protected deployment after reviewing the exact commit. There are no
+   migration-mode or migration-record inputs.
+4. GitHub deploys the ZIP with the publish profile. App Service installs pinned
+   dependencies, then runs `bash startup.sh` using its own settings and network.
+5. Startup validates required environment settings and Driver 18, invokes
+   `python -m flask --app app:create_app deploy-upgrade`, and creates all five
+   application tables plus the Alembic version table through revision
+   **`0001_sqlserver_baseline`**. Only a successful migration starts Gunicorn.
+6. Inspect protected App Service startup logs for **Database upgraded to the release
+   head**. Verify `/health` returns `{"status":"ok"}`; then test instructor signup/login,
+   create a session, join from a separate browser, advance/leave/end, save settings,
+   and check cross-browser Socket.IO updates. This verifies DB access beyond liveness.
+
+No administrator-created application tables, `db.create_all()`, migration host or
+separate manual migration command is required. The Python app factory never creates
+or upgrades a schema; only the explicit deployment wrapper owns production migrations.
+
+## 6. Normal future deployments and migration safety
+
+Commit code and any reviewed Alembic revision together, pass CI, then dispatch and
+approve the main-branch deployment as above. App Service startup automatically
+runs the wrapper on **every restart** as well as deployment. Already-at-head upgrades
+are harmless, still locked and verified. GitHub requires no DB credentials or access.
+
+The wrapper checks for exactly one release head before connecting. It acquires the
+exclusive database-scoped `TakeANumber:deploy-upgrade` application lock with
+`sp_getapplock`, owned by the same physical transaction Alembic uses. Competing
+migration attempts fail promptly rather than running together. Connection opening
+has bounded serverless-resume retries; migrations use a 5-second SQL lock timeout,
+a 120-second per-statement ODBC query timeout and `XACT_ABORT ON`. The wrapper verifies
+the final Alembic heads exactly equal the release head before commit. SQL Server
+transactional DDL rolls back with the revision record on any failure. Lock release
+follows commit/rollback/connection close. Failure exits nonzero and Gunicorn cannot start.
+
+Review future revisions for SQL Server support, filtered indexes, named constraints,
+transactional DDL and a practical downgrade. Do not put commits, separate engine
+connections or Alembic autocommit blocks in production migrations: these would
+escape transaction ownership and release the application lock early. Long data
+backfills require a separately reviewed design and cannot be hidden in routine startup.
+
+Use backward-compatible migrations while the previous release may still serve
+requests. One configured worker does not eliminate old/new process overlap during
+platform replacement. The migration lock serializes migrations, not all application
+traffic. Schedule a maintenance window for incompatible changes. Confirm backups
+and a restore plan before destructive changes. Do not automatically downgrade on
+failure. A rollback to an older code version with a different head deliberately
+fails validation; use a reviewed forward fix or restore compatible code and DB
+state together. Never restore the retired migration chain onto this new database.
+
+`/health` succeeding during deployment can temporarily come from the previous process.
+Check new-release startup logs and functional behavior before declaring a release
+successful. A failed new process may leave the previous release serving or the site
+unavailable, depending on App Service replacement behavior.
+
+## 7. Serverless auto-pause and failures
+
+SQLAlchemy uses **NullPool** and **pyodbc pooling is disabled before any connection**.
+Closing a request/session releases the physical connection. Socket.IO handshakes
+also release their read transaction; live sockets do not hold idle DB sessions.
+Every new physical connection applies the required filtered-index SET options,
+a 5-second lock timeout and a 30-second query timeout. No background database
+heartbeat or readiness poll is added.
+
+Connection-opening retries handle Azure transient/resume errors (including 40613)
+and login timeouts. Requests get at most **3 attempts**, 5-second login timeout each,
+with 1- and 2-second backoff (roughly 18 seconds plus driver/network overhead).
+Startup migrations get **20 attempts**, backoff capped at 5 seconds (87 seconds of backoff, roughly three
+minutes including login timeouts). Authentication and certificate failures are not
+retried. Statements and transactions are **never replayed**; a dropped connection
+may leave a write's outcome uncertain, so refresh current state before retrying an
+action. Exhausted HTTP database requests return a generic 503 with Retry-After: 5;
+raw ODBC errors, SQL parameters and credentials are not logged or returned.
+
+The first connection to a paused Azure SQL database can fail while waking it; resume
+can take about a minute. An initial user request may receive 503 before resume
+completes, then succeed on refresh. Keep auto-pause disabled if that latency is
+unacceptable. NullPool adds login/TLS overhead to active requests; evaluate observed
+latency and concurrency before changing pooling. Open classroom views periodically
+refresh state and will keep SQL active. Close those tabs, query tools and other DB
+clients to allow auto-pause. Portal/query monitoring that opens sessions can also
+wake/prevent pause. Features such as geo-replication, long-term backup retention
+and logical-server DNS aliases can prevent auto-pause; check eligibility before
+enabling them. Storage is billed while compute is paused; minimum compute is
+billed while active. Auto-pause is conditional, not a promise of zero idle cost.
+See [Azure SQL auto-pause/resume](https://learn.microsoft.com/en-us/azure/azure-sql/database/serverless-tier-auto-pause-resume)
+and [SQLAlchemy/pyodbc pooling](https://docs.sqlalchemy.org/en/21/dialects/mssql.html#pyodbc-pooling-connection-close-behavior).
+
+Operator commands expose fixed categories only:
+
+| Category | Action |
+| --- | --- |
+| `dns-resolution` | Verify canonical SQL hostname and App Service DNS resolution. |
+| `network-timeout` / `database-connection` | Check firewall, outbound route/ports, driver and serverless status. Do not keep restarting against an unreachable endpoint. |
+| `tls-verification` | Keep Encrypt=yes/TrustServerCertificate=no; check runtime CA roots and canonical host. |
+| `database-authentication` | Check the contained user, password encoding and selected database. |
+| `database-privileges` | Verify CONNECT/CREATE TABLE and CONTROL on dbo for the same application user. |
+| `migration-timeout` | Investigate blocking/long DDL; do not bypass locking or disable timeout protection. |
+| `alembic-migration` | Check the reviewed release chain and current version in protected SQL tooling. |
+
+`check-db` is an explicit read-only diagnostic and **does wake SQL**. Never print
+`DATABASE_URL`, `SECRET_KEY`, passwords, bound SQL values or raw driver exceptions.
+Gunicorn access logs are disabled because URLs can contain public session identifiers;
+keep platform HTTP logging/Application Insights URL, body, cookie and exception
+capture off or appropriately redacted, with restricted access and retention. Startup
+logs contain revision identifiers and fixed failure categories only.

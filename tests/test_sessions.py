@@ -5,9 +5,10 @@ from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from app.auth.services import register_instructor
+from app.database import native_codes, unique_violation
 from app.extensions import db
 from app.models import HelpSession, Instructor
 from app.services import sessions
@@ -81,7 +82,7 @@ def test_concurrent_starts_return_one_session(app, actors):
 
     def start(_):
         with app.app_context():
-            db.session.execute(db.text("SET LOCAL lock_timeout = '5s'"))
+            db.session.execute(db.text("SET LOCK_TIMEOUT 5000"))
             barrier.wait(timeout=5)
             return sessions.start_session(actors[0]).id
 
@@ -97,7 +98,7 @@ def test_concurrent_ends_preserve_first_timestamp(app, actors, public_code):
 
     def end(_):
         with app.app_context():
-            db.session.execute(db.text("SET LOCAL lock_timeout = '5s'"))
+            db.session.execute(db.text("SET LOCK_TIMEOUT 5000"))
             barrier.wait(timeout=5)
             result = sessions.end_session(actors[0], public_code)
             return result.ended_at, result.updated_at
@@ -158,16 +159,18 @@ def test_join_guard_holds_row_lock_until_caller_finishes(app, public_code):
                 db.session.execute(
                     db.select(HelpSession)
                     .where(HelpSession.public_code == public_code)
-                    .with_for_update(nowait=True)
+                    .with_hint(
+                        HelpSession, "WITH (UPDLOCK, HOLDLOCK, NOWAIT)", dialect_name="mssql"
+                    )
                 )
-            except OperationalError as error:
-                return error.orig.sqlstate
+            except ProgrammingError as error:
+                return 1222 if 1222 in native_codes(error) else "unexpected-error"
             return "unlocked"
 
     with app.app_context():
         assert sessions.session_for_join(public_code).accepts_joins
         with ThreadPoolExecutor(max_workers=1) as pool:
-            assert pool.submit(competing_lock).result(timeout=5) == "55P03"
+            assert pool.submit(competing_lock).result(timeout=5) == 1222
         db.session.rollback()
     with ThreadPoolExecutor(max_workers=1) as pool:
         assert pool.submit(competing_lock).result(timeout=5) == "unlocked"
@@ -236,7 +239,7 @@ def test_database_enforces_one_active_session_and_unique_code(app, actors, publi
                     )
                 )
                 db.session.commit()
-            assert error.value.orig.diag.constraint_name == constraint
+            assert unique_violation(error.value, constraint)
             db.session.rollback()
 
 

@@ -6,7 +6,7 @@ Do not ask Codex to build the entire application in one task.
 
 ## Milestone 0 — Repository foundation
 
-Goal: establish a clean Flask/PostgreSQL project skeleton.
+Goal: establish a clean Flask/SQL Server project skeleton.
 
 Deliverables:
 
@@ -17,8 +17,8 @@ Deliverables:
 - initial package structure
 - `.env.example`
 - `.gitignore` updates as needed
-- Docker Compose PostgreSQL development service
-- dedicated PostgreSQL test database strategy
+- Docker Compose SQL Server development service
+- dedicated SQL Server test database strategy
 - pytest configuration
 - basic smoke test
 - Ruff configuration if not already present
@@ -27,7 +27,7 @@ Deliverables:
 Acceptance criteria:
 
 - app starts locally
-- app connects to PostgreSQL
+- app connects to SQL Server
 - tests connect only to test database
 - `ruff check .` passes
 - `pytest` passes
@@ -236,13 +236,13 @@ Goal: repeatable deployment.
 Deliverables:
 
 - GitHub Actions test workflow
-- PostgreSQL service in CI
+- SQL Server service in CI
 - Ruff + pytest gates
 - Azure deployment workflow
 - App Service publish-profile authentication using `AZURE_WEBAPP_PUBLISH_PROFILE`
 - Azure App Service startup command
 - production config
-- migration/deployment procedure with direct database authentication and a trusted-machine fallback
+- automatic, serialized startup migrations using the single application `DATABASE_URL`
 - Application Insights/logging review
 
 Acceptance criteria:
@@ -250,5 +250,8 @@ Acceptance criteria:
 - PR checks run automatically
 - main deployment is controlled and reproducible
 - deployment uses `azure/webapps-deploy@v3` and the protected publish-profile secret
-- migrations use only database credentials and network access, before code deployment
+- App Service runs `deploy-upgrade` before Gunicorn; migration failure blocks process startup
+- GitHub uses only the publish profile, never production database credentials/network access
+- the initial SQL Server baseline initializes an empty database
+- serverless resume retries are bounded, idle connections close, and `/health` never queries SQL
 - production secrets are outside source control

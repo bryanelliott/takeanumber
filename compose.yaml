@@ -2,37 +2,55 @@ name: takeanumber
 
 services:
   db:
-    image: postgres:17
+    image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
-      POSTGRES_DB: takeanumber_dev
-      POSTGRES_USER: takeanumber_dev
-      POSTGRES_PASSWORD: local_dev_only
+      ACCEPT_EULA: Y
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: Local_Dev_Only_42!
+      MSSQL_MEMORY_LIMIT_MB: 2048
     ports:
-      - "127.0.0.1:55432:5432"
+      - "127.0.0.1:55432:1433"
     volumes:
-      - dev-postgres:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U takeanumber_dev -d takeanumber_dev"]
-      interval: 2s
-      timeout: 5s
-      retries: 30
+      - dev-sqlserver:/var/opt/mssql
 
   test-db:
-    image: postgres:17
+    image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
-      POSTGRES_DB: takeanumber_test
-      POSTGRES_USER: takeanumber_test
-      POSTGRES_PASSWORD: local_test_only
+      ACCEPT_EULA: Y
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: Local_Test_Only_42!
+      MSSQL_MEMORY_LIMIT_MB: 2048
     ports:
-      - "127.0.0.1:55433:5432"
-    # Disposable test data; never mount the development volume here.
+      - "127.0.0.1:55433:1433"
+    # Separate disposable server; never mount the development volume here.
     tmpfs:
-      - /var/lib/postgresql/data
+      - /var/opt/mssql:uid=10001,gid=0
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U takeanumber_test -d takeanumber_test"]
-      interval: 2s
+      test: [CMD-SHELL, '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" -b -o /dev/null']
+      interval: 5s
       timeout: 5s
       retries: 30
+      start_period: 20s
+
+  test-runner:
+    profiles: [test]
+    build:
+      context: .
+      dockerfile: tests/Dockerfile
+    network_mode: service:test-db
+    depends_on:
+      test-db:
+        condition: service_healthy
+    volumes:
+      - .:/workspace
+    environment:
+      APP_ENV: development
+      SECRET_KEY: local-test-only-not-a-production-secret
+      DATABASE_URL: mssql+pyodbc://unused_dev:unused@127.0.0.1:1433/unused_dev?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=yes
+      TEST_DATABASE_URL: mssql+pyodbc://takeanumber_test:Local_Test_Only_42!@127.0.0.1:1433/takeanumber_test?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=yes
+      TEST_SQL_ADMIN_PASSWORD: Local_Test_Only_42!
+      SESSION_COOKIE_SECURE: 'false'
+    command: [bash, -c, 'python scripts/init_test_database.py && python -m pytest -m "not browser"']
 
 volumes:
-  dev-postgres:
+  dev-sqlserver:

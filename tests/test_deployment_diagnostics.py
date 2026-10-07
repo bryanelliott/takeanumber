@@ -3,7 +3,7 @@ import ssl
 from unittest.mock import patch
 
 import click
-import psycopg
+import pyodbc
 import pytest
 from alembic.util.exc import CommandError
 from sqlalchemy.exc import OperationalError
@@ -18,36 +18,23 @@ SECRET = "sentinel-password-and-student-data"
     "error,category",
     [
         (socket.gaierror(SECRET), "dns-resolution"),
-        (psycopg.OperationalError("could not translate host name " + SECRET), "dns-resolution"),
-        (psycopg.OperationalError("Name or service not known " + SECRET), "dns-resolution"),
+        (pyodbc.OperationalError("08001", "host missing (11001) " + SECRET), "dns-resolution"),
         (TimeoutError(SECRET), "network-timeout"),
-        (psycopg.errors.ConnectionTimeout(SECRET), "network-timeout"),
-        (psycopg.OperationalError("connection timed out " + SECRET), "network-timeout"),
+        (pyodbc.OperationalError("HYT00", SECRET), "network-timeout"),
         (ssl.SSLCertVerificationError(SECRET), "tls-verification"),
         (
-            psycopg.OperationalError("SSL error: certificate verify failed " + SECRET),
+            pyodbc.OperationalError("08001", "SSL Provider certificate failed " + SECRET),
             "tls-verification",
         ),
         (
-            psycopg.OperationalError("root certificate file does not exist " + SECRET),
-            "tls-verification",
+            pyodbc.OperationalError("28000", "login failed (18456) " + SECRET),
+            "database-authentication",
         ),
         (
-            psycopg.OperationalError("server certificate does not match host name " + SECRET),
-            "tls-verification",
-        ),
-        (psycopg.errors.InvalidPassword(SECRET), "postgres-authentication"),
-        (
-            psycopg.OperationalError("password authentication failed " + SECRET),
-            "postgres-authentication",
-        ),
-        (psycopg.errors.InsufficientPrivilege(SECRET), "database-privileges"),
-        (
-            psycopg.OperationalError("permission denied for database " + SECRET),
+            pyodbc.ProgrammingError("42000", "permission denied (229) " + SECRET),
             "database-privileges",
         ),
-        (psycopg.OperationalError("no pg_hba.conf entry " + SECRET), "network-access-policy"),
-        (psycopg.OperationalError("connection refused " + SECRET), "database-connection"),
+        (pyodbc.OperationalError("08001", SECRET), "database-connection"),
     ],
 )
 def test_connection_errors_are_categorized_without_secrets(app, command, error, category, caplog):
@@ -65,9 +52,12 @@ def test_connection_errors_are_categorized_without_secrets(app, command, error, 
 @pytest.mark.parametrize(
     "error,category",
     [
-        (psycopg.errors.InsufficientPrivilege(SECRET), "database-privileges"),
-        (psycopg.errors.LockNotAvailable(SECRET), "migration-timeout"),
-        (psycopg.errors.QueryCanceled(SECRET), "migration-timeout"),
+        (
+            pyodbc.ProgrammingError("42000", "permission denied (229) " + SECRET),
+            "database-privileges",
+        ),
+        (pyodbc.OperationalError("HYT00", "lock timeout (1222) " + SECRET), "migration-timeout"),
+        (pyodbc.OperationalError("HYT00", SECRET), "migration-timeout"),
         (CommandError(SECRET), "alembic-migration"),
         (click.ClickException(SECRET), "alembic-migration"),
     ],

@@ -13,7 +13,7 @@ from app.services.wait_time import WaitTimeService
 @pytest.fixture
 def as_of(app):
     with app.app_context():
-        return db.session.scalar(db.select(db.func.clock_timestamp()))
+        return db.session.scalar(db.select(db.func.sysdatetimeoffset()))
 
 
 def history(instructor_id, as_of, *, ended_at=None):

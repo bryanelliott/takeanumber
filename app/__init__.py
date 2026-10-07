@@ -5,9 +5,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from flask import Flask
+from sqlalchemy.exc import DBAPIError
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config import Config, configure_database, validate_production
+from app.database import configure_engine
 from app.extensions import csrf, db, init_socketio, login_manager, migrate
 
 
@@ -27,6 +29,8 @@ def create_app(config=None):
     validate_production(app.config)
 
     db.init_app(app)
+    with app.app_context():
+        configure_engine(db.engine)
     migrate.init_app(app, db)
 
     from app.auth import blueprint as auth_blueprint
@@ -51,6 +55,18 @@ def create_app(config=None):
     app.cli.add_command(check_db)
     app.cli.add_command(deploy_upgrade)
     init_socketio(app)
+
+    @app.errorhandler(DBAPIError)
+    def database_unavailable(error):
+        # ODBC exceptions can include values even with SQLAlchemy hide_parameters.
+        # Teardown closes/rolls back the session. Never replay an interrupted write.
+        app.logger.warning("Database request failed; retry after checking current state.")
+        return (
+            {"error": "Database temporarily unavailable. Refresh to check current state."},
+            503,
+            {"Retry-After": "5", "Cache-Control": "no-store"},
+        )
+
     if app.config["APP_ENV"] == "production":
         # App Service terminates TLS. Trust one scheme header, but never forwarded Host.
         app.wsgi_app = ProxyFix(

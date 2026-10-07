@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from app.database import unique_violation
 from app.extensions import db
 from app.models import Instructor, InstructorSetting
 from app.models.instructor import PASSWORD_METHOD, normalize_email
@@ -27,9 +28,7 @@ def register_instructor(email, display_name, password):
         db.session.commit()
     except IntegrityError as error:
         db.session.rollback()
-        if getattr(getattr(error.orig, "diag", None), "constraint_name", None) == (
-            "uq_instructor_email"
-        ):
+        if unique_violation(error, "uq_instructor_email"):
             raise EmailAlreadyRegistered("Unable to create an account with that email.") from None
         raise
     return instructor

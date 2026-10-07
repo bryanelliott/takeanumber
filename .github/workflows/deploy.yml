@@ -2,17 +2,6 @@ name: Deploy Azure production
 
 on:
   workflow_dispatch:
-    inputs:
-      migration_mode:
-        description: Run migrations here, or confirm a reviewed migration from a trusted machine
-        type: choice
-        options: [manual, runner]
-        default: manual
-        required: true
-      migrated_sha:
-        description: Manual mode only - full commit SHA successfully migrated (reviewer must verify)
-        type: string
-        required: false
 
 permissions:
   contents: read
@@ -26,57 +15,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/ci.yml
 
-  migrate:
+  deploy:
     needs: verify
     if: github.ref == 'refs/heads/main'
-    # Optional repository variable for an isolated runner with private network access.
-    runs-on: ${{ fromJSON(vars.AZURE_DEPLOY_RUNNER_LABELS || '["ubuntu-24.04"]') }}
-    environment: production
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.13'
-      - name: Validate migration approval inputs
-        shell: bash
-        env:
-          MIGRATION_MODE: ${{ inputs.migration_mode }}
-          MIGRATED_SHA: ${{ inputs.migrated_sha }}
-          MIGRATION_DATABASE_NETWORK: ${{ vars.MIGRATION_DATABASE_NETWORK || 'private' }}
-        run: python scripts/check_migration_inputs.py
-      - name: Install release dependencies in an isolated environment
-        if: inputs.migration_mode == 'runner'
-        shell: bash
-        run: |
-          python -m venv "$RUNNER_TEMP/release-venv"
-          "$RUNNER_TEMP/release-venv/bin/python" -m pip install -r requirements.txt
-          "$RUNNER_TEMP/release-venv/bin/python" -m pip check
-      - name: Apply reviewed, backward-compatible migrations
-        if: inputs.migration_mode == 'runner'
-        shell: bash
-        env:
-          APP_ENV: production
-          FLASK_SKIP_DOTENV: '1'
-          SESSION_COOKIE_SECURE: 'true'
-          TRUSTED_HOSTS: ${{ vars.APP_TRUSTED_HOSTS }}
-          # Intentional: the CLI reads DATABASE_URL; this must be the DDL role, not runtime.
-          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
-        run: |
-          set -euo pipefail
-          # This CLI instance does not serve requests or need the runtime signing key.
-          SECRET_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')
-          export SECRET_KEY
-          "$RUNNER_TEMP/release-venv/bin/python" -m flask --app app:create_app deploy-upgrade
-
-  deploy:
-    needs: migrate
-    if: github.ref == 'refs/heads/main'
-    runs-on: ${{ fromJSON(vars.AZURE_DEPLOY_RUNNER_LABELS || '["ubuntu-24.04"]') }}
+    runs-on: ubuntu-24.04
     environment: production
     timeout-minutes: 30
     env:

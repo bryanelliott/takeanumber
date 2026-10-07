@@ -2,8 +2,7 @@
 
 from dataclasses import dataclass, fields
 
-from sqlalchemy.dialects.postgresql import insert
-
+from app.database import utc_now
 from app.extensions import db
 from app.models import HelpSession, InstructorSetting
 from app.realtime import publish_queue_changed
@@ -58,13 +57,18 @@ def save_preferences(instructor_id, preferences):
     values = {field.name: getattr(preferences, field.name) for field in fields(AlertPreferences)}
     AlertPreferences(**values)
     try:
-        statement = insert(InstructorSetting).values(instructor_id=instructor_id, **values)
-        db.session.execute(
-            statement.on_conflict_do_update(
-                constraint="uq_instructor_setting_instructor",
-                set_={**values, "updated_at": db.func.clock_timestamp()},
-            )
+        row = db.session.scalar(
+            db.select(InstructorSetting)
+            .where(InstructorSetting.instructor_id == instructor_id)
+            .with_hint(InstructorSetting, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+            .execution_options(populate_existing=True)
         )
+        if row is None:
+            row = InstructorSetting(instructor_id=instructor_id)
+            db.session.add(row)
+        for key, value in values.items():
+            setattr(row, key, value)
+        row.updated_at = utc_now()
         codes = list(
             db.session.scalars(
                 db.select(HelpSession.public_code).where(

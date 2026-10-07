@@ -4,8 +4,7 @@ import hashlib
 import re
 import secrets
 
-from sqlalchemy.dialects.postgresql import insert
-
+from app.database import utc_now
 from app.extensions import db
 from app.models import StudentIdentity
 
@@ -32,9 +31,17 @@ def find_identity(token):
 
 def identity_for_join(token):
     """Upsert inside the queue transaction, including simultaneous first joins."""
-    statement = insert(StudentIdentity).values(public_token_hash=token_hash(token))
-    statement = statement.on_conflict_do_update(
-        constraint="uq_student_identity_token_hash",
-        set_={"last_seen_at": db.func.clock_timestamp()},
-    ).returning(StudentIdentity)
-    return db.session.scalar(statement.execution_options(populate_existing=True))
+    hashed = token_hash(token)
+    identity = db.session.scalar(
+        db.select(StudentIdentity)
+        .where(StudentIdentity.public_token_hash == hashed)
+        .with_hint(StudentIdentity, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
+        .execution_options(populate_existing=True)
+    )
+    if identity is None:
+        identity = StudentIdentity(public_token_hash=hashed)
+        db.session.add(identity)
+    else:
+        identity.last_seen_at = utc_now()
+    db.session.flush()
+    return identity

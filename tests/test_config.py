@@ -5,8 +5,8 @@ import pytest
 from app import create_app
 from app.extensions import db
 
-TEST_URL = "postgresql+psycopg://user_test:password@127.0.0.1:55433/example_test"
-DEV_URL = "postgresql+psycopg://user_dev:password@127.0.0.1:55432/example_dev"
+TEST_URL = "mssql+pyodbc://user_test:password@127.0.0.1:55433/example_test?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=yes"
+DEV_URL = "mssql+pyodbc://user_dev:password@127.0.0.1:55432/example_dev?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=yes"
 
 
 @pytest.fixture
@@ -27,16 +27,21 @@ def config():
         "invalid-password-secret",
         "sqlite:///:memory:",
         "mysql://user:password@localhost/example_test",
-        "postgresql://user_test:password@localhost:invalid/example_test",
-        "postgresql://user_test:password@localhost:99999/example_test",
-        "postgresql:///example_test",
+        "mssql+pyodbc://user_test:password@localhost:invalid/example_test",
+        "mssql+pyodbc://user_test:password@localhost:99999/example_test",
+        "mssql+pyodbc:///example_test",
         DEV_URL,
         TEST_URL.replace("example_test", "example_dev"),
         TEST_URL.replace("user_test", "user_dev"),
         TEST_URL.replace("127.0.0.1", "remote.example"),
-        TEST_URL + "?dbname=example_dev",
-        TEST_URL + "?host=remote.example",
-        TEST_URL + "?service=production",
+        TEST_URL + "&dbname=example_dev",
+        TEST_URL + "&host=remote.example",
+        TEST_URL + "&service=production",
+        TEST_URL.replace("Encrypt=yes", "Encrypt=no"),
+        TEST_URL.replace("Driver+18", "Driver+17"),
+        TEST_URL + "&TrustServerCertificate=no",
+        TEST_URL + "&Authentication=ActiveDirectoryDefault",
+        TEST_URL.replace("127.0.0.1", "127.0.0.1%3BDATABASE%3Dother"),
     ],
 )
 def test_unsafe_test_configuration_fails_before_engine_initialization(config, url):
@@ -56,7 +61,7 @@ def test_test_database_cannot_match_development_database(config):
 
 
 @pytest.mark.parametrize("url", [None, "sqlite:///:memory:"])
-def test_ordinary_app_requires_postgresql(config, url):
+def test_ordinary_app_requires_sqlserver(config, url):
     config.update(TESTING=False, DATABASE_URL=url)
     with patch.object(db, "init_app") as initialize:
         with pytest.raises(ValueError):
@@ -95,12 +100,10 @@ def test_environment_is_read_for_each_factory_call(monkeypatch):
             db.engine.dispose()
 
 
-def test_plain_postgresql_scheme_selects_psycopg(config):
-    config["TEST_DATABASE_URL"] = TEST_URL.replace("+psycopg", "")
-    application = create_app(config)
-    with application.app_context():
-        assert db.engine.url.drivername == "postgresql+psycopg"
-        db.engine.dispose()
+def test_other_driver_cannot_bypass_security_options(config):
+    config["TEST_DATABASE_URL"] = TEST_URL.replace("mssql+pyodbc", "mssql+pymssql")
+    with pytest.raises(ValueError, match="pyodbc"):
+        create_app(config)
 
 
 def test_secret_key_required(config):

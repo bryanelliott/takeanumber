@@ -1,4 +1,4 @@
-"""Fixtures always opt into the dedicated PostgreSQL test configuration."""
+"""Fixtures always opt into the dedicated SQL Server test configuration."""
 
 import re
 from html.parser import HTMLParser
@@ -23,9 +23,7 @@ def migrated_schema():
     with application.app_context():
         # Verify the actual target before executing schema changes.
         with db.engine.connect() as connection:
-            database, username = connection.execute(
-                text("SELECT current_database(), current_user")
-            ).one()
+            database, username = connection.execute(text("SELECT DB_NAME(), USER_NAME()")).one()
             assert database == db.engine.url.database and database.endswith("_test")
             assert username == db.engine.url.username and username.endswith("_test")
         upgrade(directory=MIGRATIONS)

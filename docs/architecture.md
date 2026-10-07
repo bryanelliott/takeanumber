@@ -8,7 +8,7 @@ The architecture should be:
 - easy for Codex and human maintainers to navigate
 - safe for multi-instructor use
 - real-time for queue state
-- PostgreSQL-first
+- SQL Server-first
 - deployable to Azure App Service
 - testable without browser automation for core business rules
 - extensible for analytics and notifications
@@ -33,7 +33,7 @@ Student Browsers                  Instructor Browsers
                           |
                     SQLAlchemy ORM
                           |
-                     PostgreSQL
+                     SQL Server
 ```
 
 Production:
@@ -46,7 +46,7 @@ GitHub
 Azure App Service
   |
   v
-Azure Database for PostgreSQL Flexible Server
+Azure SQL Database
 ```
 
 ## 3. Flask application structure
@@ -217,7 +217,7 @@ Milestone 6 policy (defined before implementation):
   ended, and before joining. Estimates exclude instructor pauses and are not a
   promise about the exact start time.
 - `WaitTimeService` is a dedicated read-only service. It accepts an explicit UTC
-  calculation time for deterministic tests; ordinary calls use PostgreSQL wall
+  calculation time for deterministic tests; ordinary calls use SQL Server wall
   time. Client snapshots calculate the estimate while retaining their existing
   session lock. No derived duration/estimate is stored, and no schema change is
   required. Existing live fragment refreshes recalculate the estimate.
@@ -263,7 +263,7 @@ Serve next. No synthetic completion is recorded when a session ends.
 `app/services/queue.py` is the QueueService module. Advancement checks ownership,
 locks the session row before querying entries, and commits completion and promotion
 together. Both Serve next and Done carry the displayed entry UUID; stale or repeated
-forms cannot act on its successor. A partial unique index independently restricts
+forms cannot act on its successor. A filtered unique index independently restricts
 each session to one serving entry. Completion is flushed before promotion to release
 that index slot, with both writes still in the same transaction. One database wall
 timestamp, obtained after acquiring the lock, records completion and the next start.
@@ -359,7 +359,7 @@ Suggested keys:
 ```text
 SECRET_KEY
 DATABASE_URL
-FLASK_ENV
+APP_ENV
 APP_BASE_URL
 SESSION_COOKIE_SECURE
 ```
@@ -376,18 +376,25 @@ Do not commit `.env`.
 
 Commit `.env.example`.
 
-## 12. PostgreSQL
+## 12. SQL Server / Azure SQL
 
-PostgreSQL is the only supported database.
+Azure SQL Database is the production target. Local development and isolated tests
+use SQL Server 2022 Linux containers. SQLAlchemy uses `mssql+pyodbc` with Microsoft
+ODBC Driver 18, encrypted connections and verified certificates in production.
+No SQLite compatibility is supported. One application user and one `DATABASE_URL`
+serve runtime and migration access in a dedicated database.
 
-Development should also use PostgreSQL.
+SQLAlchemy NullPool and disabled pyodbc pooling close idle physical connections so
+serverless auto-pause remains possible. Only connection opening is retried, with
+bounded request/startup budgets. Statements and transactions are never replayed.
+`/health` stays liveness-only. Active browser polling can keep the database awake.
 
-Recommended local development:
-
-- PostgreSQL in Docker
-- Flask in local `.venv`
-
-Use a separate PostgreSQL database for tests.
+Queue/session mutations use `UPDLOCK, HOLDLOCK` to serialize transitions and range
+checks. Consistent queue snapshots use `HOLDLOCK`; ordinary reads use SQL Server
+READ COMMITTED with READ_COMMITTED_SNAPSHOT enabled, as in Azure SQL. Filtered
+unique indexes independently enforce active-session, active-entry and serving
+invariants. Identity/settings inserts use a locked select then insert/update in
+the same transaction. Locks may cover index keys or ranges, not just physical rows.
 
 ## 13. Migrations
 
@@ -529,8 +536,8 @@ The instructor blueprint serves a login-required, CSRF-protected settings form a
 `/instructor/settings`. The owner always comes from `current_user.id`; no route or
 form field selects another instructor. `app/services/settings.py` reads immutable
 `AlertPreferences` snapshots and atomically saves the complete preference set.
-Registration creates a settings row and migration `0005_instructor_settings`
-backfills existing accounts. Unique/FK/range constraints enforce persistence rules.
+Registration creates a settings row in the same transaction. The initial SQL
+Server baseline includes this table. Unique/FK/range constraints enforce persistence rules.
 
 Defaults preserve Phase 7A: Next Up, Serving, and visual emphasis enabled; optional
 sound and vibration allowed but off in each student browser until that student
@@ -582,7 +589,7 @@ Peak queue length may be derived from event history or captured using a session 
 
 ### Service/integration tests
 
-Using PostgreSQL test database:
+Using SQL Server test database:
 
 - instructor registration/login
 - session ownership
@@ -603,38 +610,29 @@ Use Flask-SocketIO test clients where useful to verify emitted events without fu
 
 Not required for initial milestones unless a behavior cannot be validated adequately otherwise.
 
-## 20. CI/CD direction
+## 20. CI/CD and startup migrations
 
-GitHub Actions should eventually:
+PR/main CI builds Python 3.13/ODBC Driver 18 containers, starts a disposable SQL
+Server instance, provisions a guarded test database, and runs Ruff and
+`pytest -m "not browser"`. The optional browser tests remain manually runnable.
 
-1. install Python dependencies
-2. start/provision PostgreSQL service
-3. run Ruff
-4. run pytest
-5. on approved main-branch deployment, run reviewed migrations with `deploy-upgrade`
-6. deploy App Service artifact using its publish profile
+The main-only, environment-protected release workflow reruns CI, validates the
+publish profile/build configuration, and deploys tracked runtime files using
+`azure/webapps-deploy@v3`. It has no production DB connection or Azure login step.
 
-Use the protected `AZURE_WEBAPP_PUBLISH_PROFILE` secret with `azure/webapps-deploy@v3`.
+App Service runs `bash startup.sh`, validates production settings, and invokes
+`python -m flask --app app:create_app deploy-upgrade` before execing one Gunicorn
+worker. The single `DATABASE_URL` is used throughout. `create_app()` never migrates.
+The wrapper verifies one release head, acquires a transaction-owned SQL Server
+application lock through `sp_getapplock`, applies Alembic using the same connection,
+checks the resulting head and commits. DDL failures roll back; bounded query/lock
+and connection timeouts prevent unbounded startup waits. Failure blocks Gunicorn.
+No `db.create_all()` path exists. `0001_sqlserver_baseline` initializes all five
+implemented tables; future revisions extend that baseline normally.
 
-Milestone 10 implements PR/main CI with a disposable PostgreSQL 17 service and
-Python 3.13. A manual main-only workflow reruns CI before an environment-protected
-publish-profile deployment. Production uses one App Service Linux instance and one
-threaded Gunicorn worker, with PostgreSQL Flexible Server and verified TLS.
-Production validation requires secure cookies, a generated signing secret, and
-explicit trusted hosts. Forwarded scheme is trusted for App Service TLS termination;
-client-address trust remains disabled until the ingress chain is verified.
-
-Migrations run once from a trusted deployment runner through `deploy-upgrade`,
-using a PostgreSQL transaction advisory lock and the same Alembic connection.
-Startup never migrates. The routine deployment path permits only backward-compatible,
-transactional migrations while the old release remains live; failures block code
-deployment. See [deployment.md](deployment.md) for exact configuration names,
-publish-profile setup, runner/network requirements, migration review, and recovery
-steps. Migrations use `MIGRATION_DATABASE_URL` directly without Azure authentication.
-For private databases unreachable from GitHub-hosted runners, a trusted machine
-can run the same command before an explicitly reviewed manual-mode deployment
-bound to the migrated commit SHA.
-The current Flexible Server uses private VNet access, so manual mode is the default.
-Runner mode rejects private databases on standard GitHub-hosted runners before
-connecting. Operator database commands expose fixed diagnostic categories without
-printing driver errors, connection strings, SQL parameters, or credentials.
+Production requires secure cookies, a generated signing secret and explicit trusted
+hosts. Forwarded scheme is trusted for App Service TLS termination; forwarded
+client addresses require verified ingress configuration. Use backward-compatible,
+transactional migrations for routine releases because old/new process overlap is
+possible. See [deployment.md](deployment.md) for user grants, settings, first release,
+recovery, secret-safe diagnostics, TLS and serverless latency considerations.

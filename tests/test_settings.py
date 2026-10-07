@@ -261,7 +261,7 @@ def test_concurrent_first_saves_create_one_complete_record(app, queue_session):
 
     def save(prefs):
         with app.app_context():
-            db.session.execute(db.text("SET LOCAL lock_timeout = '5s'"))
+            db.session.execute(db.text("SET LOCK_TIMEOUT 5000"))
             barrier.wait(timeout=5)
             settings.save_preferences(queue_session[0], prefs)
 

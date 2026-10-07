@@ -1,7 +1,7 @@
 # Take A Number
 
-A Flask/PostgreSQL application for student help queues in college labs.
-Milestones 0–6, Phase 7A, and Milestone 8 provide the Flask/PostgreSQL foundation, instructor authentication,
+A Flask/SQL Server application for student help queues in college labs.
+Milestones 0–6, Phase 7A, and Milestone 8 provide the Flask/SQL Server foundation, instructor authentication,
 help sessions, public student queue joining/leaving, Master View advancement, and
 live queue updates, wait-time estimates, in-browser student alerts, and instructor settings.
 See `docs/implementation-plan.md` for later milestones.
@@ -11,7 +11,10 @@ unimplemented pending the peak queue history decision.
 ## Local setup (Windows PowerShell)
 
 Use Python 3.13 and Docker Desktop with its Linux engine running. Flask runs in
-the local virtual environment; PostgreSQL runs in Docker. From the repository root:
+the local virtual environment with Microsoft ODBC Driver 18 installed; SQL Server
+2022 runs in Docker. Use x86-64 Linux containers and allow at least 2 GB RAM per SQL
+Server container. For tests, the supplied Linux runner includes Python and Driver 18.
+From the repository root:
 
 ```powershell
 # Only create the virtual environment if it does not already exist.
@@ -21,22 +24,45 @@ python -m pip install -r requirements.txt
 python -m pip check
 
 # Only copy if .env does not already exist; preserve any existing local settings.
-Copy-Item .env.example .env
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 Put the generated value in `.env` as `SECRET_KEY`. The factory loads this file
 without overriding existing process environment variables. `.env` is ignored by
 Git. The database passwords in the example and Compose file are deliberately
-local development credentials, not deployment secrets.
+local development credentials, not deployment secrets. If upgrading an existing
+checkout, replace its old database URLs with the SQL Server examples; do not reuse
+the previous engine's data volume or migration history.
+
+Start the development server, then create its dedicated database/login once:
 
 ```powershell
-docker compose config --quiet
-docker compose up -d --wait db test-db
+docker compose up -d db
+# Wait for SQL Server to report ready, then provision local database/user only:
+@"
+CREATE DATABASE [takeanumber_dev];
+GO
+ALTER DATABASE [takeanumber_dev] SET READ_COMMITTED_SNAPSHOT ON;
+CREATE LOGIN [takeanumber_dev] WITH PASSWORD='Local_Dev_Only_42!', CHECK_POLICY=OFF;
+GO
+USE [takeanumber_dev];
+CREATE USER [takeanumber_dev] FOR LOGIN [takeanumber_dev] WITH DEFAULT_SCHEMA=dbo;
+GRANT CONNECT, CREATE TABLE TO [takeanumber_dev];
+GRANT CONTROL ON SCHEMA::dbo TO [takeanumber_dev];
+GO
+"@ | docker compose exec -T db /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Local_Dev_Only_42!' -C -b
+
 flask --app app:create_app check-db
 flask --app app:create_app db upgrade
 python run.py --debug
 ```
+
+These local SQL setup commands are for a new development volume only, not repeated
+at every launch. Alembic creates application tables. Local containers use self-signed
+certificates; `.env.example` permits them only outside production. See Microsoft's
+[ODBC installation instructions](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server)
+if the host Python process cannot locate Driver 18.
 
 In a second terminal:
 
@@ -45,7 +71,7 @@ Invoke-RestMethod http://127.0.0.1:5000/health
 ```
 
 `/health` returns HTTP 200 and `{"status":"ok"}` as a process liveness check.
-It does not query PostgreSQL. `check-db` executes `SELECT 1` and exits nonzero
+It does not query SQL Server. `check-db` executes `SELECT 1` and exits nonzero
 if the database connection fails, without printing connection credentials.
 The root URL has no page yet.
 
@@ -75,7 +101,7 @@ ownership; submitted instructor IDs are ignored. Missing sessions and another
 instructor's sessions both return 404. Public codes are opaque 128-bit random
 values, separate from internal UUIDs, and do not grant management access.
 
-A PostgreSQL partial unique index permits only one active session per instructor.
+A SQL Server filtered unique index permits only one active session per instructor.
 The service locks the instructor row during Start, so simultaneous requests return
 the same active session. End locks its session row; repeated or concurrent calls
 preserve the first `ended_at` and retain the historical record. An old End request
@@ -102,7 +128,7 @@ current request changes nothing. A serving request that leaves is not completed;
 the instructor uses Serve next to resume. Stale/repeated controls target their
 original request and cannot accidentally complete its successor.
 
-Join, Leave, Serve next, Done, and End share a session row lock. PostgreSQL also
+Join, Leave, Serve next, Done, and End share a session row lock. SQL Server also
 enforces at most one serving request per session. Completion and the next service
 start share a UTC database timestamp obtained after locking. Multiple Master View
 browsers read consistent database snapshots and update automatically after queue
@@ -143,9 +169,9 @@ never invents a fresh identity when cookies are blocked. Successful POSTs redire
 to GET. Student identity persists independently of instructor login/logout.
 
 The session row lock serializes Join, Leave, and End. Number allocation and entry
-creation commit together. PostgreSQL independently enforces unique session numbers
+creation commit together. SQL Server independently enforces unique session numbers
 and one waiting/serving entry per browser identity per session using an explicit
-partial unique index. Duplicate joins return the existing request unchanged.
+filtered unique index. Duplicate joins return the existing request unchanged.
 Leave records a timestamp and retains history. It targets a specific entry, so
 replaying an old Leave after rejoining cannot remove the new request.
 
@@ -211,7 +237,7 @@ help for whoever is currently serving, then round the **total up to whole minute
 Elapsed service time is not subtracted. With nobody ahead, show that the student
 is waiting for the instructor instead of promising an immediate start. Estimates
 exclude instructor pauses and disappear outside the waiting state. Live updates
-and manual refresh recalculate them from PostgreSQL; nothing derived is stored.
+and manual refresh recalculate them from SQL Server; nothing derived is stored.
 
 The policy is intentionally fixed and simple in this milestone. See
 `docs/architecture.md` for exact boundaries. No migration or dependency changes
@@ -264,9 +290,9 @@ Apply the new migration before running the updated app:
 .\.venv\Scripts\python.exe -m flask --app app:create_app db upgrade
 ```
 
-Migration `0005_instructor_settings` backfills existing instructors with defaults;
+The initial SQL Server baseline includes instructor settings;
 registration creates settings for new accounts. One row per instructor and warning
-count bounds are enforced by PostgreSQL. Downgrading removes preferences only.
+count bounds are enforced by SQL Server. Preferences are included in the initial baseline.
 There are no dependency changes. Run the focused persistence, ownership, migration,
 and media checks with:
 
@@ -279,7 +305,7 @@ pytest tests/test_settings.py tests/test_migrations.py tests/test_live_browser.p
 - Email whitespace is trimmed and the entire address is lowercased, including the
   local part. Internationalized domains are converted to ASCII IDNA form. Unicode
   local parts are rejected. Dots and `+tags` are preserved; they are not aliases.
-  Email syntax is checked without DNS/deliverability requests. PostgreSQL enforces
+  Email syntax is checked without DNS/deliverability requests. SQL Server enforces
   unique normalized emails, including simultaneous sign-ups.
 - Display names are required, trimmed, and limited to 100 characters.
 - Passwords are 15–128 characters, are not trimmed or silently truncated, and can
@@ -307,149 +333,126 @@ pytest tests/test_settings.py tests/test_migrations.py tests/test_live_browser.p
 | `APP_ENV` | `development` (default) or `production`; production enables strict validation. |
 | `TRUSTED_HOSTS` | Required exact comma-separated hostnames in production. |
 | `PROXY_FIX_X_FOR` | Trusted client-address proxy hops, 0–3; defaults to 0 pending ingress verification. |
-| `DATABASE_URL` | Required for ordinary app instances; PostgreSQL URL using psycopg. |
+| `DATABASE_URL` | Required for ordinary app instances; SQL Server URL using `mssql+pyodbc`; same credential for startup migrations and runtime. |
 | `TEST_DATABASE_URL` | Required for test instances; never falls back to `DATABASE_URL`. |
 | `SESSION_COOKIE_SECURE` | `true` for HTTPS cookies; `false` for local HTTP (default). |
 | `AUTH_RATE_LIMIT` | Positive integer; shared sign-up/login POST limit per address (default 20). |
 | `AUTH_RATE_WINDOW_SECONDS` | Positive integer; fixed rate-limit window (default 900). |
 | `STUDENT_COOKIE_MAX_AGE` | Positive cookie lifetime in seconds (default 15552000 / 180 days). |
 
-Both `postgresql://` and `postgresql+psycopg://` select psycopg 3. SQLite and
-other database backends are rejected. `psycopg-binary` is pinned alongside
-`psycopg` because the original environment lacked the libpq library needed by
-the plain psycopg package. Existing dependency pins are otherwise unchanged.
+Only `mssql+pyodbc` and Microsoft ODBC Driver 18 are supported. The URL must include
+`driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no` in
+production, using the canonical Azure SQL hostname. Local self-signed containers
+use `TrustServerCertificate=yes`. Unknown/duplicate URL options and extra binds
+are rejected; test selection cannot be overridden through SQLAlchemy config.
 
 ## Tests and database isolation
 
-In an activated virtual environment, after copying/configuring `.env`:
+The same Linux environment runs locally and in GitHub CI, including on Windows
+hosts without ODBC installed:
 
 ```powershell
 docker compose up -d --wait test-db
+docker compose build test-runner
+docker compose run --rm test-runner python -m ruff check .
+# Provisions only the disposable test database, then runs pytest -m "not browser":
+docker compose run --rm test-runner
+# Complete pytest, including optional browser checks (skip if browser absent):
+docker compose run --rm test-runner python -m pytest
+# Optional coverage after test provisioning:
+docker compose run --rm test-runner python -m pytest --cov=app --cov-report=term-missing
+```
+
+To run pytest in the host virtual environment, install Driver 18, provision the
+test database using the command above, and configure `.env` from `.env.example`:
+
+```powershell
 ruff check .
 pytest -m "not browser"
-# Optional coverage report:
-pytest -m "not browser" --cov=app --cov-report=term-missing
-# Optional manual live browser/DOM checks:
+# Optional manual live browser/DOM tests, using host Chrome/Chromium/Edge:
 pytest -m browser
 ```
 
-Socket.IO tests cover room isolation, ownership, CSRF/origin rejection, minimal
-payloads, commit-before-notify, rollback, reconnects, and private state responses.
-The `browser` marker selects isolated headless DOM tests for draft preservation,
-reconnects, overlapping refreshes, and alert fallbacks. They are optional/manual
-and excluded from normal CI and the deployment gate because hosted Chromium can
-fail for runner-specific reasons. They skip when Chrome, Chromium, or Edge is not
-installed. Plain `pytest` still includes them. All unit, integration, database,
-migration, auth, queue, Socket.IO, and production configuration tests remain required.
-On Linux with `CI` or `GITHUB_ACTIONS` set to a nonempty value, only this test
-browser uses `--no-sandbox` to support runners without a usable Chromium sandbox.
-Local runs without those markers and all Windows runs retain normal sandboxing.
+`browser` tests cover draft preservation, reconnects, refresh ordering and alert
+fallbacks. They are optional/manual and excluded from normal CI and the deployment
+gate because hosted Chromium can fail for runner-specific reasons. They skip if
+no browser is installed. Plain `pytest` still includes them. Only Linux test
+browsers in `CI`/`GITHUB_ACTIONS` use `--no-sandbox`; Windows and normal developer
+sandboxing remain unchanged. All unit, database, migration, auth, queue, settings,
+Socket.IO and production configuration tests remain required.
 
-Tests explicitly create the app with `TESTING=True`. Before any database engine
-is initialized, the factory requires a `TEST_DATABASE_URL` with a loopback host,
-database and username ending in `_test`, and no URL query parameters. Test and
-development database names must differ. Additional SQLAlchemy binds are rejected,
-and `SQLALCHEMY_DATABASE_URI` cannot override the selected URL.
+Before creating an engine, `TESTING=True` requires `TEST_DATABASE_URL` with a
+loopback host, database and user ending in `_test`, and only the validated Driver
+18/TLS options. Test and development database names must differ. The fixtures check
+actual `DB_NAME()` and `USER_NAME()` before applying Alembic or deleting test rows.
+Missing configuration/unavailable SQL fails the suite; tests never silently fall
+back to another database. No test uses `create_all()` or `drop_all()`.
 
-Compose provides two separate PostgreSQL servers, each bound only to loopback:
-
-| Service | Host port | Database / user | Storage |
+| Compose service | Host port | Database / user | Storage |
 | --- | --- | --- | --- |
-| `db` | 55432 | `takeanumber_dev` | Persistent named volume |
-| `test-db` | 55433 | `takeanumber_test` | Disposable memory filesystem |
+| `db` | 55432 | `takeanumber_dev` | Persistent dedicated SQL Server volume |
+| `test-db` | 55433 | `takeanumber_test` | Separate disposable memory filesystem |
+| `test-runner` | Shares test-db's loopback network | Test-only credentials | Source mount + Python/ODBC image |
 
-The servers have distinct credentials and do not share database storage. Use
-these dedicated local instances; never point tests at a development or production
-database. Guards catch configuration mistakes, but names alone cannot prove a
-database is disposable. The integration tests verify the actual connected database
-and role. Missing configuration or unavailable PostgreSQL fails tests rather than
-silently skipping them. CI maps its disposable PostgreSQL service to loopback and
-uses the same safety checks.
-
-Integration tests verify the actual database and role, apply Alembic migrations
-only to the dedicated test database, and clean queue entries, browser identities,
-help sessions, then instructors between tests. Migration tests downgrade to base or the previous milestone
-and upgrade again on that disposable database, including preservation of existing
-instructor accounts across the HelpSession migration.
-Tests do not call `create_all` or `drop_all`. Do not run parallel test processes
-against this single test database.
+The servers have separate credentials/storage. `scripts/init_test_database.py`
+only provisions a guarded, disposable loopback test target, with schema-level
+permissions equivalent to production, never database-owner membership. Tests apply
+the initial migration, verify model/schema agreement, constraint failures,
+transaction rollback, locking, upgrade idempotence and future revisions. Do not
+run parallel test processes against this one test database.
 
 ## Operations: CI and Azure deployment
 
-CI runs Ruff and `pytest -m "not browser"` on Python 3.13 with a disposable PostgreSQL 17 service for
-pull requests and `main`. Existing test database guards remain enabled. Require
-the **Ruff and pytest** check before merging.
+The normal release is **CI -> App Service publish-profile deploy -> automatic startup
+migration using DATABASE_URL -> Gunicorn**. CI uses its own SQL Server containers,
+with no access to the production database. The main-only **Deploy Azure production**
+workflow reruns CI, uses the protected `production` environment and deploys tracked
+runtime files with `azure/webapps-deploy@v3` and `AZURE_WEBAPP_PUBLISH_PROFILE`.
 
-The **Deploy Azure production** workflow is manually dispatched from `main`,
-reruns CI, and uses the protected `production` environment with
-`AZURE_WEBAPP_PUBLISH_PROFILE` and `azure/webapps-deploy@v3`.
-The current database uses private VNet access, so deployment defaults to manual
-migration from an authorized network, followed by approval of the same commit SHA.
-Explicit runner mode runs `deploy-upgrade` using `MIGRATION_DATABASE_URL` mapped to
-`DATABASE_URL`; use the DDL-capable migration role, not the runtime role. Private
-databases are blocked on standard GitHub-hosted runners. Migration failure blocks
-deployment. No Azure CLI login is required.
-Production startup is **`bash startup.sh`**, running one threaded Gunicorn worker.
-Use one App Service instance and Azure Database for PostgreSQL Flexible Server.
+Use one App Service Linux/Python 3.13 instance, one worker and Azure SQL Database.
+The startup command is **`bash startup.sh`**. It validates production configuration,
+runs the safe `deploy-upgrade` wrapper and starts Gunicorn only after a successful
+migration. Both phases use the **same application user and DATABASE_URL**. No
+separate migration credential, Azure CLI login, migration host or manual schema
+step is needed for normal releases or initialization of an empty database.
 
-Configure Azure resources, environment reviewers, runner database connectivity,
-runtime settings, and the exact GitHub variables/secrets listed in
-[the deployment runbook](docs/deployment.md) before dispatching. Runtime cookies
-must be secure and PostgreSQL connections must verify certificates and hostname.
-No Azure resources or workflows have been run by this repository preparation.
-The runbook also covers manual migration from a trusted machine when private
-networking prevents runner access, followed by an approved deployment of the same
-commit. The portal-generated push deployment is removed so it cannot bypass these gates.
+See [the deployment runbook](docs/deployment.md) for exact Portal setup, application
+user SQL/grants, connection string, first and future releases, timeout/locking
+behavior, diagnostics, rollback limitations and serverless cold-start latency.
+[The database port audit](docs/database-port.md) records dialect changes and files.
+Azure resources and App Service settings must still be configured; repository
+validation does not itself perform a production deployment.
 
-The operator migration command, from the reviewed release with its protected
-production environment configured, is:
-
-```bash
-python -m flask --app app:create_app deploy-upgrade
-```
-
-It serializes migrations and rolls back transactional failures. Only reviewed,
-backward-compatible migrations use the routine live deployment path. Do not run
-migrations at startup, run tests against production, or automatically downgrade
-after a failed deployment. See the runbook for backup, approval, verification,
-rollback, proxy configuration, logging, and required Azure validation.
-`check-db` provides a read-only connection check. Both commands report sanitized
-failure categories for DNS, network, TLS, authentication, privileges, and migration
-errors; see the runbook for corrective steps. Never print connection strings.
+`/health` is liveness-only and never wakes SQL. NullPool plus disabled pyodbc pooling
+close idle connections. Only connection opening is retried, never a transaction or
+statement. The first request after auto-pause can return a safe 503 while SQL wakes;
+active classroom views keep querying SQL and prevent idle auto-pause.
 
 ## Migrations
 
-`migrations/versions/0001_instructor_create_instructor.py` creates only `instructor`:
-UUID primary key, normalized unique email, required display name/hash, active flag,
-and UTC-aware creation/update timestamps. ORM updates refresh `updated_at`.
+`migrations/versions/0001_sqlserver_baseline.py` initializes the complete current
+schema: instructor, instructor_setting, help_session, student_identity and queue_entry.
+It preserves UUIDs, timestamp constraints, normalized emails, Unicode names,
+filtered uniqueness, authorization ownership and historical queue data. The retired
+engine-specific revisions remain in Git history; there is no production data to
+convert. This baseline requires a **new empty SQL Server/Azure SQL database**.
 
-`migrations/versions/0002_help_session_create_help_session.py` adds `help_session`
-with its instructor foreign key, unique public code, one-active-session index,
-and status/timestamp/counter constraints. Apply it using `db upgrade` before
-opening the dashboard after updating from Milestone 1.
-
-`migrations/versions/0003_student_queue_create_student_identity_and_queue_entry.py`
-adds browser identities and historical queue entries, including the explicit
-active-entry partial unique index. Run `db upgrade` before opening the Client View.
-
-`migrations/versions/0004_queue_advancement_one_serving_per_session.py` adds the
-partial unique index allowing only one serving entry per session. Run `db upgrade`
-before using the Milestone 4 Master View. Its downgrade removes only that index,
-preserving all requests and timestamps. Existing invalid multiple-serving data
-causes upgrade to fail rather than silently rewriting history.
+For local development only:
 
 ```powershell
 flask --app app:create_app db upgrade
 flask --app app:create_app db current
-# After a future model change, generate and review the migration before upgrading:
+# After a model change, generate and review a new revision:
 flask --app app:create_app db migrate -m "describe the schema change"
 ```
 
-The initial migration's downgrade removes the instructor table and its account
-data. Downgrading Milestone 2 to Milestone 1 removes session records but preserves
-instructors. Downgrading Milestone 3 removes queue entries and browser identities
-but preserves sessions/instructors and their existing queue-number counters.
-Automated downgrade tests run only on the dedicated test database.
+Production startup always calls `python -m flask --app app:create_app deploy-upgrade`.
+Its transaction-owned SQL application lock, bounded timeouts and final-head check
+protect migration execution. The application factory does not migrate and no schema
+creation shortcut is used. Future migrations extend the baseline; do not edit it
+after first deployment. Downgrading the baseline deletes application tables/data
+and is tested only on the disposable test database. Routine deployments require
+backward-compatible, transactional changes; never auto-downgrade a failed release.
 
 ## Stop and reset local databases
 
@@ -485,9 +488,9 @@ app/
   static/          focused live-update JavaScript and vendored Socket.IO client
 run.py             local single-process Socket.IO server
 startup.sh         production single-worker threaded Gunicorn startup
-.github/workflows/ PostgreSQL CI and protected Azure publish-profile deployment
+.github/workflows/ SQL Server CI and protected Azure publish-profile deployment
 migrations/        Alembic configuration and versioned schema
 tests/             foundation, authentication, session, database, and migration tests
-compose.yaml       local development and test PostgreSQL servers
+compose.yaml       local development and test SQL Server servers
 pyproject.toml     pytest and Ruff settings
 ```

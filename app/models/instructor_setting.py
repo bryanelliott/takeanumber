@@ -25,10 +25,12 @@ class InstructorSetting(db.Model):
     sound_alert_enabled = db.Column(db.Boolean, nullable=False, server_default=db.true())
     vibration_enabled = db.Column(db.Boolean, nullable=False, server_default=db.true())
     advance_warning_count = db.Column(db.Integer, nullable=False, server_default="1")
-    created_at = db.Column(db.DateTime(timezone=True), nullable=False, server_default=db.func.now())
+    created_at = db.Column(
+        db.DateTime(timezone=True), nullable=False, server_default=db.func.sysdatetimeoffset()
+    )
     updated_at = db.Column(
         db.DateTime(timezone=True),
         nullable=False,
-        server_default=db.func.now(),
+        server_default=db.func.sysdatetimeoffset(),
         onupdate=lambda: datetime.now(UTC),
     )

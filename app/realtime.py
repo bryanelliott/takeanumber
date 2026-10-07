@@ -6,6 +6,7 @@ from flask import current_app, request
 from flask_login import current_user
 from flask_socketio import join_room
 from flask_wtf.csrf import validate_csrf
+from sqlalchemy.exc import DBAPIError
 from wtforms.validators import ValidationError
 
 from app.extensions import db
@@ -46,6 +47,9 @@ def connect(auth):
             return False
         # Clients cannot supply a room name, switch rooms, or mutate the queue.
         join_room(room(code, view))
+    except DBAPIError:
+        current_app.logger.warning("Database unavailable during live view connection.")
+        return False
     finally:
         db.session.rollback()  # release the read transaction for this handshake
 

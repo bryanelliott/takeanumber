@@ -3,6 +3,13 @@
 This document is a design target, not permission to implement every table immediately.
 
 Use UUID primary keys unless there is a strong documented reason not to.
+SQLAlchemy `Uuid` maps to SQL Server UNIQUEIDENTIFIER; UUIDs are generated in Python.
+`0001_sqlserver_baseline` contains the five currently implemented tables. Future
+push/metrics tables remain deferred. Booleans map to BIT. Display names use NVARCHAR
+with an explicit 100-code-point check so supplementary Unicode characters round-trip.
+Public codes, token hashes, password hashes and status values use binary collations
+to preserve case-sensitive comparisons. Nullable token hashes use a filtered unique
+index (`IS NOT NULL`) so multiple retained identities can be unlinked independently.
 
 ## 1. Instructor
 
@@ -12,12 +19,12 @@ Suggested fields:
 
 ```text
 id                  UUID PK
-email               VARCHAR / CITEXT-like semantics if practical
-display_name        VARCHAR
+email               VARCHAR(254), normalized lowercase ASCII/IDNA
+display_name        NVARCHAR(200), max 100 Unicode characters
 password_hash       VARCHAR
 is_active           BOOLEAN
-created_at          TIMESTAMPTZ
-updated_at          TIMESTAMPTZ
+created_at          DATETIMEOFFSET
+updated_at          DATETIMEOFFSET
 ```
 
 Constraints:
@@ -47,8 +54,8 @@ sound_alert_enabled         BOOLEAN
 vibration_enabled           BOOLEAN
 push_enabled                BOOLEAN
 advance_warning_count       INTEGER
-created_at                  TIMESTAMPTZ
-updated_at                  TIMESTAMPTZ
+created_at                  DATETIMEOFFSET
+updated_at                  DATETIMEOFFSET
 ```
 
 Initial default:
@@ -60,16 +67,17 @@ advance_warning_count = 1
 Milestone 8 implements the fields above except `push_enabled`, which is deferred
 until Web Push exists. All five implemented booleans default to true. Sound and
 vibration settings permit student opt-in; they never automatically enable media.
-The warning count is non-null and constrained to integers 1–3 in PostgreSQL and
+The warning count is non-null and constrained to integers 1–3 in SQL Server and
 the settings form. The instructor foreign key is non-null and unique; deletion
 of an instructor cascades to its preferences (no instructor deletion UI is added).
 
-Migration `0005_instructor_settings` backfills one default record per existing
-instructor. Registration inserts its settings in the same transaction. Reads do
+The initial SQL Server baseline includes this table. Registration inserts
+its settings in the same transaction. Reads do
 not create records; accounts provisioned outside registration use safe defaults
-until saved. Saves use an atomic PostgreSQL upsert on the unique instructor key,
+until saved. Saves use a `UPDLOCK, HOLDLOCK` select followed by insert/update in one transaction,
 so concurrent saves cannot create duplicates. The last committed complete form
-wins. A downgrade drops only settings; instructor/session/queue history is retained.
+wins. Baseline downgrade drops all implemented application tables and is tested
+only on the disposable test database.
 
 ## 3. HelpSession
 
@@ -82,11 +90,11 @@ id                  UUID PK
 instructor_id       UUID FK -> instructor.id
 public_code         VARCHAR
 status              VARCHAR or enum-like constrained value
-started_at          TIMESTAMPTZ
-ended_at            TIMESTAMPTZ nullable
+started_at          DATETIMEOFFSET
+ended_at            DATETIMEOFFSET nullable
 next_queue_number   INTEGER
-created_at          TIMESTAMPTZ
-updated_at          TIMESTAMPTZ
+created_at          DATETIMEOFFSET
+updated_at          DATETIMEOFFSET
 ```
 
 Constraints:
@@ -101,7 +109,7 @@ Business rule:
 
 - Prefer at most one active session per instructor.
 
-Milestone 2 enforces this with the PostgreSQL partial unique index
+Milestone 2 enforces this with the SQL Server filtered unique index
 `uq_help_session_active_instructor` on `instructor_id` where `status = 'active'`.
 The start-session service also locks the instructor row: concurrent or repeated
 starts return the same active session. Starting after it ends creates a new record.
@@ -130,9 +138,9 @@ Suggested fields:
 ```text
 id                  UUID PK
 public_token_hash   VARCHAR or BYTEA
-first_seen_at       TIMESTAMPTZ
-last_seen_at        TIMESTAMPTZ
-created_at          TIMESTAMPTZ
+first_seen_at       DATETIMEOFFSET
+last_seen_at        DATETIMEOFFSET
+created_at          DATETIMEOFFSET
 ```
 
 Important:
@@ -160,14 +168,14 @@ id                  UUID PK
 session_id          UUID FK -> help_session.id
 student_identity_id UUID FK -> student_identity.id
 queue_number        INTEGER
-display_name        VARCHAR nullable
+display_name        NVARCHAR(200), max 100 Unicode characters nullable
 status              VARCHAR or constrained value
-joined_at           TIMESTAMPTZ
-service_started_at  TIMESTAMPTZ nullable
-completed_at        TIMESTAMPTZ nullable
-left_at             TIMESTAMPTZ nullable
-created_at          TIMESTAMPTZ
-updated_at          TIMESTAMPTZ
+joined_at           DATETIMEOFFSET
+service_started_at  DATETIMEOFFSET nullable
+completed_at        DATETIMEOFFSET nullable
+left_at             DATETIMEOFFSET nullable
+created_at          DATETIMEOFFSET
+updated_at          DATETIMEOFFSET
 ```
 
 Recommended statuses:
@@ -197,29 +205,29 @@ Critical invariant:
 
 A student identity may have at most one active queue entry per session.
 
-Because "active" spans selected statuses, PostgreSQL partial unique indexes may be appropriate:
+Because "active" spans selected statuses, SQL Server filtered unique indexes may be appropriate:
 
 ```text
 UNIQUE(session_id, student_identity_id)
 WHERE status IN ('waiting', 'serving')
 ```
 
-If Flask-Migrate autogeneration does not produce the desired partial index correctly, write the migration explicitly and test it.
+If Flask-Migrate autogeneration does not produce the desired filtered index correctly, write the migration explicitly and test it.
 
 Milestone 3 explicitly creates `uq_queue_entry_active_identity` on
 `(session_id, student_identity_id)` for `waiting` and `serving` in migration
-`0003_student_queue`. `uq_queue_entry_session_number` prevents reusing any number,
+`0001_sqlserver_baseline`. `uq_queue_entry_session_number` prevents reusing any number,
 including historical entries. Foreign keys restrict deletion of referenced
 sessions/identities. Names are optional, trimmed, limited to 100 characters, and
 stored only on the request. Blank names become NULL.
 
 Timestamp constraints enforce the shapes of waiting, serving, completed, and
-left records. Milestone 4 adds the explicit partial unique index
+left records. Milestone 4 adds the explicit filtered unique index
 `uq_queue_entry_serving_session` on `session_id` where `status = 'serving'`, in
-migration `0004_queue_advancement`. This permits at most one serving entry per
+migration `0001_sqlserver_baseline`. This permits at most one serving entry per
 session; it does not alter session-scoped queue numbers or existing history.
-The migration fails if pre-existing data violates that invariant, rather than
-silently choosing which request should be served. Downgrade only removes the index.
+All indexes are created with the initial tables. Future changes must preserve
+these constraints; no migration silently rewrites queue history.
 
 Serve next changes the first waiting entry to serving and records its start.
 Done changes the displayed serving entry to completed with `completed_at` and
@@ -242,9 +250,9 @@ endpoint_hash       VARCHAR
 endpoint            TEXT
 p256dh               TEXT
 auth                 TEXT
-created_at           TIMESTAMPTZ
-updated_at           TIMESTAMPTZ
-revoked_at           TIMESTAMPTZ nullable
+created_at           DATETIMEOFFSET
+updated_at           DATETIMEOFFSET
+revoked_at           DATETIMEOFFSET nullable
 ```
 
 Treat subscription fields as sensitive application data.
@@ -271,7 +279,10 @@ StudentIdentity
 
 Use timezone-aware timestamps.
 
-Store UTC in PostgreSQL via `TIMESTAMPTZ`.
+Store timezone-aware instants through SQLAlchemy `DateTime(timezone=True)`,
+mapped to SQL Server `DATETIMEOFFSET`. Azure SQL uses UTC; Python timestamps use
+UTC and SQL transition/default timestamps use `SYSDATETIMEOFFSET()`. Duration
+queries use `DATEDIFF_BIG(microsecond, ...)` with decimal arithmetic.
 
 Convert to local display time only in the presentation layer.
 

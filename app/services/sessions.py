@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError
 
+from app.database import unique_violation
 from app.extensions import db
 from app.models import HelpSession, Instructor
 from app.realtime import publish_queue_changed
@@ -33,7 +34,7 @@ def owned_session(instructor_id, public_code, *, lock=False):
         .execution_options(populate_existing=True)
     )
     if lock:
-        query = query.with_for_update()
+        query = query.with_hint(HelpSession, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
     help_session = db.session.scalar(query)
     if help_session is None:
         raise SessionNotFound()
@@ -43,12 +44,12 @@ def owned_session(instructor_id, public_code, *, lock=False):
 def start_session(instructor_id):
     """Commit one new session or return the existing active session on retry."""
     try:
-        # Serialize concurrent starts even before a session row exists. The partial
+        # Serialize concurrent starts even before a session row exists. The filtered
         # unique index independently enforces the invariant for all database writers.
         instructor = db.session.scalar(
             db.select(Instructor)
-            .where(Instructor.id == instructor_id, Instructor.is_active.is_(True))
-            .with_for_update()
+            .where(Instructor.id == instructor_id, Instructor.is_active == db.true())
+            .with_hint(Instructor, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
         )
         if instructor is None:
             raise SessionNotFound()
@@ -66,8 +67,7 @@ def start_session(instructor_id):
                         db.session.flush()
                     break
                 except IntegrityError as error:
-                    constraint = getattr(getattr(error.orig, "diag", None), "constraint_name", None)
-                    if constraint != "uq_help_session_public_code":
+                    if not unique_violation(error, "uq_help_session_public_code"):
                         raise
             else:
                 raise RuntimeError("Unable to allocate a unique session code.")
@@ -104,7 +104,7 @@ def session_for_join(public_code):
     help_session = db.session.scalar(
         db.select(HelpSession)
         .where(HelpSession.public_code == public_code)
-        .with_for_update()
+        .with_hint(HelpSession, "WITH (UPDLOCK, HOLDLOCK)", dialect_name="mssql")
         .execution_options(populate_existing=True)
     )
     if help_session is None:

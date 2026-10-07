@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.services import register_instructor
+from app.database import unique_violation
 from app.extensions import db
 from app.models import QueueEntry
 from app.services import queue, sessions, student_identity
@@ -150,7 +151,7 @@ def test_concurrent_identical_actions_transition_only_once(app, queue_session, c
 
     def advance(_):
         with app.app_context():
-            db.session.execute(db.text("SET LOCAL lock_timeout = '5s'"))
+            db.session.execute(db.text("SET LOCK_TIMEOUT 5000"))
             barrier.wait(timeout=5)
             operation = queue.complete_current if complete else queue.begin_serving
             return operation(*queue_session, first)
@@ -173,7 +174,7 @@ def test_done_serializes_with_other_queue_mutations(app, queue_session, competin
 
     def action(is_done):
         with app.app_context():
-            db.session.execute(db.text("SET LOCAL lock_timeout = '5s'"))
+            db.session.execute(db.text("SET LOCK_TIMEOUT 5000"))
             barrier.wait(timeout=5)
             if is_done:
                 try:
@@ -231,10 +232,10 @@ def test_database_allows_only_one_serving_entry_per_session(app, queue_session):
             db.session.execute(
                 db.update(QueueEntry)
                 .where(QueueEntry.id == second)
-                .values(status="serving", service_started_at=db.func.clock_timestamp())
+                .values(status="serving", service_started_at=db.func.sysdatetimeoffset())
             )
             db.session.commit()
-        assert error.value.orig.diag.constraint_name == "uq_queue_entry_serving_session"
+        assert unique_violation(error.value, "uq_queue_entry_serving_session")
         db.session.rollback()
 
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from app.database import utc_now
 from app.extensions import db
 from app.models import HelpSession, Instructor, QueueEntry
 from app.models.queue_entry import ACTIVE_STATUSES
@@ -55,7 +56,7 @@ def master_state(instructor_id, public_code):
                 HelpSession.instructor_id == instructor_id,
                 HelpSession.public_code == public_code,
             )
-            .with_for_update(read=True)
+            .with_hint(HelpSession, "WITH (HOLDLOCK)", dialect_name="mssql")
             .execution_options(populate_existing=True)
         )
         if help_session is None:
@@ -137,11 +138,11 @@ def _advance(instructor_id, public_code, entry_id, *, complete):
             db.session.commit()
             return False
         # Read wall time after acquiring the lock, not transaction-start time.
-        transitioned_at = db.session.scalar(db.select(db.func.clock_timestamp()))
+        transitioned_at = db.session.scalar(db.select(utc_now()))
         if complete:
             serving.status = "completed"
             serving.completed_at = transitioned_at
-            # Release the partial unique index slot before promoting the next row.
+            # Release the filtered unique index slot before promoting the next row.
             db.session.flush()
         if next_entry is not None:
             next_entry.status = "serving"
@@ -228,8 +229,8 @@ def leave(public_code, token, entry_id):
         changed = entry.status in ACTIVE_STATUSES
         if changed:
             entry.status = "left"
-            entry.left_at = db.func.clock_timestamp()
-            identity.last_seen_at = db.func.clock_timestamp()
+            entry.left_at = utc_now()
+            identity.last_seen_at = utc_now()
         db.session.commit()
         if changed:
             publish_queue_changed(public_code)
@@ -246,7 +247,7 @@ def client_state(public_code, token=None):
             db.select(HelpSession, Instructor.display_name)
             .join(Instructor, HelpSession.instructor_id == Instructor.id)
             .where(HelpSession.public_code == public_code)
-            .with_for_update(read=True, of=HelpSession)
+            .with_hint(HelpSession, "WITH (HOLDLOCK)", dialect_name="mssql")
             .execution_options(populate_existing=True)
         ).one_or_none()
         if row is None:
@@ -275,7 +276,7 @@ def client_state(public_code, token=None):
             ahead, waiting_ahead = db.session.execute(
                 db.select(
                     db.func.count(),
-                    db.func.count().filter(QueueEntry.status == "waiting"),
+                    db.func.count(db.case((QueueEntry.status == "waiting", 1))),
                 )
                 .select_from(QueueEntry)
                 .where(

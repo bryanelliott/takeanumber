@@ -5,6 +5,7 @@ import re
 
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
+from sqlalchemy.pool import NullPool
 
 
 class Config:
@@ -12,9 +13,9 @@ class Config:
     MAX_CONTENT_LENGTH = 64 * 1024
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
-        "pool_pre_ping": True,
+        "poolclass": NullPool,
         "hide_parameters": True,
-        "connect_args": {"connect_timeout": 5},
+        "connect_args": {"timeout": 5},
     }
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
@@ -74,18 +75,14 @@ def validate_production(config):
             "Production requires explicit TRUSTED_HOSTS hostnames (no wildcards or URLs)."
         )
     url = config["SQLALCHEMY_DATABASE_URI"]
-    if not url.host.endswith(".postgres.database.azure.com"):
-        raise ValueError(
-            "Production DATABASE_URL must use an Azure PostgreSQL Flexible Server hostname."
-        )
+    if not url.host.endswith(".database.windows.net"):
+        raise ValueError("Production DATABASE_URL must use an Azure SQL Database hostname.")
     if (
-        url.query.get("sslmode") != "verify-full"
-        or not url.query.get("sslrootcert")
-        or set(url.query) - {"sslmode", "sslrootcert"}
-        or any(not isinstance(value, str) for value in url.query.values())
+        url.query.get("Encrypt", "").lower() != "yes"
+        or url.query.get("TrustServerCertificate", "").lower() != "no"
     ):
         raise ValueError(
-            "Production DATABASE_URL requires sslmode=verify-full and sslrootcert only."
+            "Production DATABASE_URL requires Encrypt=yes and TrustServerCertificate=no."
         )
 
 
@@ -99,7 +96,7 @@ def positive_integer(name, default):
     return value
 
 
-def postgres_url(value, setting):
+def sqlserver_url(value, setting):
     """Validate without including credentials in configuration errors."""
     if not value:
         raise ValueError(f"{setting} is required.")
@@ -107,39 +104,49 @@ def postgres_url(value, setting):
         url = make_url(value)
         port = url.port
     except (ArgumentError, TypeError, ValueError):
-        raise ValueError(f"{setting} must be a valid PostgreSQL URL.") from None
-    if url.drivername not in {"postgresql", "postgresql+psycopg"}:
-        raise ValueError(f"{setting} must use PostgreSQL with psycopg.")
+        raise ValueError(f"{setting} must be a valid SQL Server URL.") from None
+    if url.drivername != "mssql+pyodbc":
+        raise ValueError(f"{setting} must use SQL Server with pyodbc.")
     if not all((url.host, url.database, url.username, url.password)):
         raise ValueError(f"{setting} must include host, database, username, and password.")
     if port is not None and not 1 <= port <= 65535:
         raise ValueError(f"{setting} has an invalid port.")
-    return url.set(drivername="postgresql+psycopg")
+    # Disallow DSNs, odbc_connect, host/user/database overrides and alternate authentication.
+    if (
+        set(url.query) != {"driver", "Encrypt", "TrustServerCertificate"}
+        or any(not isinstance(value, str) for value in url.query.values())
+        or url.query.get("driver") != "ODBC Driver 18 for SQL Server"
+        or url.query.get("Encrypt", "").lower() != "yes"
+        or url.query.get("TrustServerCertificate", "").lower() not in {"yes", "no"}
+        or any(char in url.host + url.database for char in ";{}")
+    ):
+        raise ValueError(
+            f"{setting} requires Driver 18, Encrypt=yes and TrustServerCertificate=yes/no only."
+        )
+    return url
 
 
 def configure_database(config):
-    """Select exactly one PostgreSQL database before initializing any engine."""
+    """Select exactly one SQL Server database before initializing any engine."""
     if config.get("SQLALCHEMY_BINDS"):
         raise ValueError("Additional database binds are not supported.")
 
     setting = "TEST_DATABASE_URL" if config["TESTING"] else "DATABASE_URL"
-    url = postgres_url(config.get(setting), setting)
+    url = sqlserver_url(config.get(setting), setting)
     if config["TESTING"]:
-        # Query parameters could redirect libpq to a different host/database/service.
+        # Only the dedicated local SQL Server and test login/database are permitted.
         if (
             url.host not in {"localhost", "127.0.0.1", "::1"}
             or not url.database.endswith("_test")
             or not url.username.endswith("_test")
-            or url.query
         ):
             raise ValueError(
-                "TEST_DATABASE_URL requires a loopback host, database and username "
-                "ending in _test, and no query parameters."
+                "TEST_DATABASE_URL requires a loopback host, database and username ending in _test."
             )
         if config.get("DATABASE_URL"):
-            development = postgres_url(config["DATABASE_URL"], "DATABASE_URL")
+            development = sqlserver_url(config["DATABASE_URL"], "DATABASE_URL")
             if url.database == development.database:
                 raise ValueError("Test and development database names must differ.")
 
     # A SQLALCHEMY_DATABASE_URI override must not bypass the selection above.
-    config["SQLALCHEMY_DATABASE_URI"] = url
+    config["SQLALCHEMY_DATABASE_URI"] = url.update_query_dict({"ConnectRetryCount": "0"})

@@ -7,8 +7,8 @@ from app import create_app
 from app.extensions import db
 
 PRODUCTION_URL = (
-    "postgresql+psycopg://runtime:password@server.postgres.database.azure.com/takeanumber"
-    "?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt"
+    "mssql+pyodbc://runtime:password@server.database.windows.net/takeanumber"
+    "?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no"
 )
 
 
@@ -40,11 +40,15 @@ def production_config(monkeypatch):
         {"TRUSTED_HOSTS": None},
         {"TRUSTED_HOSTS": [".example.edu"]},
         {"TRUSTED_HOSTS": ["https://queue.example.edu"]},
-        {"DATABASE_URL": PRODUCTION_URL.replace("server.postgres.database.azure.com", "localhost")},
-        {"DATABASE_URL": PRODUCTION_URL.replace("verify-full", "require")},
-        {"DATABASE_URL": PRODUCTION_URL.split("&sslrootcert")[0]},
+        {"DATABASE_URL": PRODUCTION_URL.replace("server.database.windows.net", "localhost")},
+        {
+            "DATABASE_URL": PRODUCTION_URL.replace(
+                "TrustServerCertificate=no", "TrustServerCertificate=yes"
+            )
+        },
+        {"DATABASE_URL": PRODUCTION_URL.split("&Encrypt")[0]},
         {"DATABASE_URL": PRODUCTION_URL + "&host=elsewhere.example"},
-        {"DATABASE_URL": PRODUCTION_URL + "&sslmode=disable"},
+        {"DATABASE_URL": PRODUCTION_URL + "&odbc_connect=override"},
     ],
 )
 def test_production_rejects_unsafe_configuration_before_engine(production_config, overrides):
@@ -84,7 +88,7 @@ def test_production_proxy_scheme_hosts_and_secure_cookies(production_config):
     assert "Secure" in page.headers["Set-Cookie"] and "HttpOnly" in page.headers["Set-Cookie"]
     assert browser.get("/health", headers={"Host": "attacker.example"}).status_code == 400
     with app.app_context():
-        assert db.engine.url.query["sslmode"] == "verify-full"
+        assert db.engine.url.query["TrustServerCertificate"] == "no"
         db.engine.dispose()
 
 

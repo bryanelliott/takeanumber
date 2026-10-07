@@ -10,14 +10,14 @@ Instructors authenticate, start and manage help sessions, and use a Master View 
 
 - Python
 - Flask
-- PostgreSQL only
+- SQL Server only
 - Flask-SQLAlchemy
 - Flask-Migrate / Alembic
 - Flask-Login
 - Flask-WTF
 - Flask-SocketIO
 - `simple-websocket`
-- `psycopg`
+- `pyodbc` (Microsoft ODBC Driver 18)
 - `python-dotenv`
 - `qrcode`
 - Gunicorn for production
@@ -27,7 +27,7 @@ Instructors authenticate, start and manage help sessions, and use a Master View 
 - GitHub
 - GitHub Actions
 - Azure App Service
-- Azure Database for PostgreSQL Flexible Server
+- Azure SQL Database
 
 Do not add SQLite compatibility.
 
@@ -40,7 +40,9 @@ Do not add SQLite compatibility.
 5. Keep persistence logic in models/repositories/services rather than embedding complex queries in templates.
 6. Use database constraints in addition to application validation where appropriate.
 7. Every schema change requires a Flask-Migrate/Alembic migration.
-8. Never manually create production database objects outside migrations.
+8. Never manually create production application tables outside migrations.
+   Production startup must run `deploy-upgrade` successfully before Gunicorn;
+   the factory never migrates and `db.create_all()` is not a deployment mechanism.
 9. Public identifiers must not expose sequential database primary keys.
 10. Prefer UUID primary keys for internal records and separate human-friendly queue numbers/session codes for display.
 11. Build real-time UI updates around server-authoritative state.
@@ -122,7 +124,7 @@ Do not store derived values unnecessarily when they can be calculated reliably f
 ## Testing expectations
 
 - Use pytest.
-- Tests use a dedicated PostgreSQL test database.
+- Tests use a dedicated SQL Server test database.
 - Never run tests against the development or production database.
 - Add tests for all queue state transitions.
 - Add tests for ownership/authorization boundaries.

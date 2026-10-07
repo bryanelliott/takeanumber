@@ -4,9 +4,10 @@ from threading import Barrier
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.exc import DataError, IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError, ProgrammingError
 
 from app.auth.services import register_instructor
+from app.database import native_codes, unique_violation
 from app.extensions import db
 from app.models import HelpSession, QueueEntry, StudentIdentity
 from app.services import queue, sessions, student_identity
@@ -81,7 +82,7 @@ def test_serving_entries_are_active_and_count_ahead(app, queue_session):
     with app.app_context():
         first = queue.join(queue_session[1], first_token)
         first.status = "serving"
-        first.service_started_at = db.func.clock_timestamp()
+        first.service_started_at = db.func.sysdatetimeoffset()
         db.session.commit()
         first_id = first.id
         assert queue.join(queue_session[1], first_token).id == first_id
@@ -101,7 +102,7 @@ def test_concurrent_joins_are_atomic(app, queue_session, same_browser):
 
     def join(token):
         with app.app_context():
-            db.session.execute(db.text("SET LOCAL lock_timeout = '5s'"))
+            db.session.execute(db.text("SET LOCK_TIMEOUT 5000"))
             barrier.wait(timeout=5)
             entry = queue.join(queue_session[1], token)
             return entry.id, entry.queue_number
@@ -126,7 +127,7 @@ def test_first_identity_creation_across_sessions_is_unique(app, queue_session):
 
     def join(code):
         with app.app_context():
-            db.session.execute(db.text("SET LOCAL lock_timeout = '5s'"))
+            db.session.execute(db.text("SET LOCK_TIMEOUT 5000"))
             barrier.wait(timeout=5)
             return queue.join(code, token).student_identity_id
 
@@ -156,7 +157,7 @@ def test_join_racing_end_has_one_consistent_outcome(app, queue_session):
 
     def action(is_join):
         with app.app_context():
-            db.session.execute(db.text("SET LOCAL lock_timeout = '5s'"))
+            db.session.execute(db.text("SET LOCK_TIMEOUT 5000"))
             barrier.wait(timeout=5)
             if not is_join:
                 sessions.end_session(*queue_session)
@@ -215,7 +216,7 @@ def test_partial_unique_index_covers_both_active_states(app, queue_session, stat
         entry = queue.join(queue_session[1], token)
         if status == "serving":
             entry.status = status
-            entry.service_started_at = db.func.clock_timestamp()
+            entry.service_started_at = db.func.sysdatetimeoffset()
             db.session.commit()
         values = {
             "session_id": entry.session_id,
@@ -225,7 +226,7 @@ def test_partial_unique_index_covers_both_active_states(app, queue_session, stat
         with pytest.raises(IntegrityError) as error:
             db.session.execute(QueueEntry.__table__.insert().values(**values))
             db.session.commit()
-        assert error.value.orig.diag.constraint_name == "uq_queue_entry_active_identity"
+        assert unique_violation(error.value, "uq_queue_entry_active_identity")
         db.session.rollback()
         queue.leave(queue_session[1], token, entry.id)
         assert queue.join(queue_session[1], token).queue_number == 2
@@ -246,7 +247,7 @@ def test_database_queue_numbers_unique_even_for_history(app, queue_session):
                 )
             )
             db.session.commit()
-        assert error.value.orig.diag.constraint_name == "uq_queue_entry_session_number"
+        assert unique_violation(error.value, "uq_queue_entry_session_number")
         db.session.rollback()
 
 
@@ -278,9 +279,11 @@ def test_database_queue_constraints(app, queue_session, changes):
         values = {"session_id": session_id, "student_identity_id": identity.id, "queue_number": 1}
         db.session.commit()
         values.update(changes)
-        with pytest.raises((IntegrityError, DataError)):
+        with pytest.raises((IntegrityError, DataError, ProgrammingError)) as error:
             db.session.execute(QueueEntry.__table__.insert().values(**values))
             db.session.commit()
+        if isinstance(error.value, ProgrammingError):
+            assert native_codes(error.value) & {2628, 8152}
         db.session.rollback()
 
 

@@ -3,6 +3,7 @@
 from datetime import timedelta
 from math import ceil
 
+from app.database import utc_now
 from app.extensions import db
 from app.models import HelpSession, QueueEntry
 
@@ -25,11 +26,21 @@ class WaitTimeService:
         if people_ahead == 0:
             return 0
         if as_of is None:
-            as_of = db.session.scalar(db.select(db.func.clock_timestamp()))
+            as_of = db.session.scalar(db.select(utc_now()))
         if as_of.utcoffset() is None:
             raise ValueError("Calculation time must be timezone-aware.")
 
-        duration = db.extract("epoch", QueueEntry.completed_at - QueueEntry.service_started_at)
+        duration = (
+            db.cast(
+                db.func.datediff_big(
+                    db.literal_column("microsecond"),
+                    QueueEntry.service_started_at,
+                    QueueEntry.completed_at,
+                ),
+                db.Numeric(24, 6),
+            )
+            / 1000000
+        )
         valid = (
             QueueEntry.status == "completed",
             QueueEntry.joined_at.is_not(None),
@@ -62,5 +73,5 @@ class WaitTimeService:
             )
         if average is None:
             return None
-        # PostgreSQL numeric averages preserve fractional seconds; round only once.
+        # SQL Server decimal averages preserve fractional seconds; round only once.
         return ceil(average * people_ahead / 60)
