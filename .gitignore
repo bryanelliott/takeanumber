@@ -14,3 +14,17 @@ coverage.xml
 instance/
 prompts/
 README-CODEX-START-HERE.md
+
+# Terraform credentials, state, plans and downloaded providers (lock file is tracked).
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+*_override.tf
+backend.hcl

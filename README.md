@@ -403,6 +403,10 @@ run parallel test processes against this one test database.
 
 ## Operations: CI and Azure deployment
 
+Provision Azure with [the Terraform configuration and operator guide](infra/README.md),
+or follow the Portal procedure in the deployment runbook. Terraform manages resources
+and settings; GitHub publishes code; application startup owns schema migrations.
+
 The normal release is **CI -> App Service publish-profile deploy -> automatic startup
 migration using DATABASE_URL -> Gunicorn**. CI uses its own SQL Server containers,
 with no access to the production database. The main-only **Deploy Azure production**

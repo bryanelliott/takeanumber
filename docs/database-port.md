@@ -7,11 +7,16 @@ The PostgreSQL-specific chain is retired because no production data needs preser
 Database**, with all five currently implemented models. Future migrations extend
 this revision. Existing databases are neither converted nor automatically dropped.
 
-Production uses one SQL-authenticated contained application user and one
+Production uses one SQL-authenticated application credential and one
 `DATABASE_URL`. Startup invokes `deploy-upgrade` before Gunicorn; the Flask factory
 never migrates. The publish-profile release workflow has no production DB secret,
 network dependency, migration job or Azure login. The exact operations are in
 [deployment.md](deployment.md).
+
+The [Terraform infrastructure](../infra/README.md) can bootstrap with the SQL
+administrator credential as explicitly allowed for initial simplicity. A contained
+application user is the recommended narrower alternative; both runtime and migrations
+switch together. This does not add a separate migration credential.
 
 ## PostgreSQL-specific behavior found and replacement
 

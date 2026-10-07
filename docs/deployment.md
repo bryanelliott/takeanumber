@@ -2,6 +2,12 @@
 
 ## Release architecture
 
+Infrastructure can be provisioned with [Terraform](../infra/README.md). That guide
+documents an optional initial administrator-credential bootstrap and switching both
+runtime and migrations together to a contained application user. The Portal procedure
+below uses the recommended contained user from the start. Both use one application
+`DATABASE_URL`; Terraform never executes SQL or migrations.
+
 The normal release is **CI -> publish-profile deploy -> App Service `deploy-upgrade`
 using `DATABASE_URL` -> Gunicorn**. Use Azure App Service Linux, Python 3.13,
 one App Service instance and one threaded Gunicorn worker. The database is Azure

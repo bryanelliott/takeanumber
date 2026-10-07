@@ -1,0 +1,41 @@
+subscription_id     = "00000000-0000-0000-0000-000000000000" # Replace with your subscription.
+resource_group_name = "takeanumber-prod-rg"
+location            = "canadacentral"
+app_name            = "takeanumber"
+environment         = "prod"
+
+# Both service names must be globally unique; replace the unique suffix.
+app_service_name = "takeanumber-prod-unique"
+sql_server_name  = "takeanumber-prod-unique-sql"
+
+app_service_plan_sku = "B1"
+python_version       = "3.13"
+always_on            = true
+health_check_path    = "/health"
+trusted_hosts        = []
+
+sql_admin_username     = "takeanumber_admin"
+sql_database_name      = "takeanumber"
+sql_database_sku_name  = "GP_S_Gen5_1"
+sql_min_capacity       = 0.5
+sql_auto_pause_minutes = 60
+sql_max_size_gb        = 32
+sql_zone_redundant     = false
+
+sql_public_network_access_enabled = true
+sql_allow_azure_services          = false
+# First apply discovers outbound IPs. Add them here and apply again BEFORE code
+# deployment; see README. Empty rules deliberately leave SQL closed to clients.
+sql_firewall_rules = {}
+
+tags = {
+  workload = "student-help-queues"
+}
+
+# Never commit passwords or signing keys. Supply these via protected TF_VAR_*
+# environment variables or a secret manager, not this example:
+# TF_VAR_sql_admin_password
+# TF_VAR_secret_key
+# Optional after creating ONE contained app user (runtime AND migrations):
+# TF_VAR_sql_app_username
+# TF_VAR_sql_app_password
