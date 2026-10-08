@@ -79,7 +79,7 @@ def test_browser_cookie_is_separate_persistent_httponly_and_hash_not_exposed(
     restored = reopened.get(path)
     assert 'data-client-status="waiting"' in restored.text
     assert "no-store" in restored.headers["Cache-Control"]
-    assert restored.headers["Referrer-Policy"] == "no-referrer"
+    assert restored.headers["Referrer-Policy"] == "same-origin"
 
 
 def test_https_cookie_flag(app, client, queue_session):
@@ -91,6 +91,64 @@ def test_https_cookie_flag(app, client, queue_session):
         if value.startswith(browser.COOKIE_NAME + "=")
     )
     assert "Secure" in header
+
+
+def test_https_join_and_leave_with_same_origin_referrer(
+    app, client, queue_session, hidden_fields
+):
+    app.config["SESSION_COOKIE_SECURE"] = True
+    path = f"/session/{queue_session[1]}"
+    base_url = "https://localhost"
+    # A QR/direct navigation has no referrer; subsequent forms use the page policy.
+    page = client.get(path, base_url=base_url)
+    assert page.status_code == 200
+    assert page.headers["Referrer-Policy"] == "same-origin"
+    headers = {"Referer": base_url + path}
+    joined = client.post(
+        path + "/join", data=hidden_fields(page), base_url=base_url, headers=headers
+    )
+    assert joined.status_code == 303
+    active = client.get(path, base_url=base_url)
+    assert 'data-client-status="waiting"' in active.text
+    left = client.post(
+        path + "/leave", data=hidden_fields(active), base_url=base_url, headers=headers
+    )
+    assert left.status_code == 303
+    assert "You left the queue" in client.get(path, base_url=base_url).text
+
+
+@pytest.mark.parametrize("action", ["join", "leave"])
+@pytest.mark.parametrize(
+    "invalid", ["missing_referrer", "foreign_referrer", "missing_token", "bad_token"]
+)
+def test_https_student_forms_retain_csrf_checks(
+    app, client, queue_session, hidden_fields, action, invalid
+):
+    path = f"/session/{queue_session[1]}"
+    base_url = "https://localhost"
+    headers = {"Referer": base_url + path}
+    page = client.get(path, base_url=base_url)
+    if action == "leave":
+        assert client.post(
+            path + "/join", data=hidden_fields(page), base_url=base_url, headers=headers
+        ).status_code == 303
+        page = client.get(path, base_url=base_url)
+    fields = hidden_fields(page)
+    if invalid == "missing_referrer":
+        headers = {}
+    elif invalid == "foreign_referrer":
+        headers = {"Referer": "https://other.example/session"}
+    elif invalid == "missing_token":
+        fields.pop("csrf_token")
+    else:
+        fields["csrf_token"] = "invalid"
+    response = client.post(
+        path + "/" + action, data=fields, base_url=base_url, headers=headers
+    )
+    assert response.status_code == 400
+    with app.app_context():
+        entries = db.session.scalars(db.select(QueueEntry)).all()
+        assert [entry.status for entry in entries] == (["waiting"] if action == "leave" else [])
 
 
 @pytest.mark.parametrize("cookie_value", [None, "tampered", "x" * 300])

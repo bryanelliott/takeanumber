@@ -10,7 +10,8 @@ blueprint = Blueprint("queue", __name__, url_prefix="/session")
 @blueprint.after_request
 def protect_private_state(response):
     response.headers["Cache-Control"] = "no-store"
-    response.headers["Referrer-Policy"] = "no-referrer"
+    # HTTPS CSRF checks need a same-origin referrer; keep it hidden from other sites.
+    response.headers["Referrer-Policy"] = "same-origin"
     return response
 
 

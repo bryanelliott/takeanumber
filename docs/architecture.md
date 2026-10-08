@@ -453,6 +453,11 @@ identity row is created on a successful join. The cookie is independent of the
 instructor authentication session, with SameSite=Lax and the configured Secure
 flag. Its configurable default lifetime is 180 days and renews on Client View GET.
 
+Client responses use `Cache-Control: no-store` and `Referrer-Policy: same-origin`.
+This keeps session URLs out of referrers sent to other sites while allowing the
+same-origin referrer required by Flask-WTF for HTTPS form submissions. CSRF token
+validation and strict HTTPS referrer checks remain enabled for join and leave.
+
 Forms bind to the browser cookie that rendered them; a missing, invalid, expired,
 or changed cookie cannot silently create an identity on POST. The user must reopen
 the Client View. Simultaneous first page loads before any cookie is established
