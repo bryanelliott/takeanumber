@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% from 'ui/components.html' import button_link, icon %}
+{% block title %}Take A Number — Less waiting. More learning.{% endblock %}
+{% block head %}
+  <meta name="description" content="A simple, real-time help queue for classrooms and labs. Students request help from their own devices, while instructors keep the queue moving.">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/landing.css') }}">
+{% endblock %}
+{% block main_class %}container landing{% endblock %}
+{% block content %}
+  <section aria-labelledby="hero-heading">
+    <div class="hero-intro">
+      <div>
+        <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> A calmer classroom starts here</p>
+        <h1 id="hero-heading">Less waiting.<br><span>More learning.</span></h1>
+      </div>
+      <div class="hero-copy stack">
+        <p class="lead">A simple, real-time help queue for classrooms and labs. Students request help from their own devices, while instructors keep the queue moving.</p>
+        <div class="cluster hero-actions">
+          {% if current_user.is_authenticated %}
+            {{ button_link('Open instructor dashboard', url_for('instructor.dashboard'), arrow=true) }}
+          {% else %}
+            {{ button_link('Get Started', url_for('auth.signup'), arrow=true) }}
+            {{ button_link('Log In', url_for('auth.login'), 'secondary') }}
+          {% endif %}
+        </div>
+        <p class="hero-note">For instructors. No student accounts needed.</p>
+      </div>
+    </div>
+    <figure class="hero-artwork">
+      <img src="{{ url_for('static', filename='images/landing-hero.webp') }}"
+           srcset="{{ url_for('static', filename='images/landing-hero-small.webp') }} 836w, {{ url_for('static', filename='images/landing-hero.webp') }} 1672w"
+           sizes="(min-width: 86rem) 80rem, (min-width: 75rem) calc(100vw - 6rem), (min-width: 25rem) 92vw, calc(100vw - 2rem)"
+           width="1672" height="941" fetchpriority="high" alt="College students queue on a green hillside to speak with an elderly sage beneath a tree.">
+      <figcaption>A little structure. More space to learn.</figcaption>
+    </figure>
+  </section>
+  <section class="section-space" aria-labelledby="features-heading">
+    <div class="section-heading">
+      <p class="eyebrow">Simple by design</p>
+      <h2 id="features-heading">Keep the focus on helping.</h2>
+      <p>From the first question to the last, everyone knows what comes next.</p>
+    </div>
+    <div class="feature-grid grid">
+      <article class="feature">
+        <span class="feature-icon">{{ icon('qr') }}</span>
+        <h3>Scan. Join. Keep learning.</h3>
+        <p>Students scan your session’s QR code and take a number from their own device. No account required.</p>
+      </article>
+      <article class="feature">
+        <span class="feature-icon">{{ icon('queue') }}</span>
+        <h3>A clear place in line.</h3>
+        <p>Queue positions update in real time, so students can see their place in line and when it’s their turn.</p>
+      </article>
+      <article class="feature">
+        <span class="feature-icon">{{ icon('check') }}</span>
+        <h3>One less thing to manage.</h3>
+        <p>See who’s next, finish a help request, and move the queue along from your instructor view.</p>
+      </article>
+    </div>
+  </section>
+  <aside class="student-note panel cluster" aria-labelledby="student-heading">
+    <div>
+      <h2 id="student-heading">Here for help?</h2>
+      <p>Scan your instructor’s QR code or open their session link to take a number.</p>
+    </div>
+    <span class="student-note-label">No sign-up. Just your next question.</span>
+  </aside>
+{% endblock %}

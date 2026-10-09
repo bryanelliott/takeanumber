@@ -83,6 +83,8 @@ def test_production_proxy_scheme_hosts_and_secure_cookies(production_config):
     }
     result = browser.get("/proxy-check", headers=headers)
     assert result.json == {"url": "https://queue.example.edu/health", "remote": "127.0.0.1"}
+    landing = browser.get("/", headers=headers)
+    assert landing.status_code == 200 and "Less waiting." in landing.text
     page = browser.get("/auth/login", headers=headers)
     assert page.status_code == 200
     assert "Secure" in page.headers["Set-Cookie"] and "HttpOnly" in page.headers["Set-Cookie"]

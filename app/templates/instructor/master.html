@@ -1,18 +1,8 @@
 {% extends 'base.html' %}
 {% block title %}Master View — Take A Number{% endblock %}
+{% block body_class %}master-page{% endblock %}
 {% block head %}
-  <style>
-    body { font: 1.15rem system-ui, sans-serif; margin: 1.5rem auto; max-width: 80rem; padding: 0 1rem; }
-    nav { display: flex; align-items: center; gap: 1rem; }
-    button, .refresh { font: inherit; min-height: 44px; padding: .6rem 1rem; }
-    .master { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 2rem; }
-    .number { font-size: clamp(2.5rem, 7vw, 5rem); margin: .3rem 0; font-weight: bold; }
-    .name, .join-url { overflow-wrap: anywhere; }
-    .qr { display: block; width: 100%; max-width: 24rem; height: auto; background: white; }
-    .done { font-size: 1.5rem; font-weight: bold; }
-    li { margin: .7rem 0; }
-    @media (max-width: 700px) { .master { grid-template-columns: 1fr; } }
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/master.css') }}">
 {% endblock %}
 {% block content %}
   <div id="live-state">{% include 'instructor/_master_state.html' %}</div>

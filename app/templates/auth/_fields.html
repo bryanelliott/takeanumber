@@ -1,9 +1,3 @@
-{% macro field(input, autocomplete) %}
-  <p>
-    {{ input.label }}<br>
-    {{ input(autocomplete=autocomplete, aria_describedby=input.id ~ '-errors', aria_invalid='true' if input.errors else 'false') }}
-  </p>
-  <div id="{{ input.id }}-errors">
-    {% for error in input.errors %}<p role="alert">{{ error }}</p>{% endfor %}
-  </div>
-{% endmacro %}
+{# Compatibility import for existing authentication templates. New forms use ui/components.html. #}
+{% from 'ui/components.html' import field as shared_field %}
+{% macro field(input, autocomplete) %}{{ shared_field(input, autocomplete) }}{% endmacro %}

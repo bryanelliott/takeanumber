@@ -61,7 +61,7 @@
     <p>Queue changes appear automatically. Refresh queue is also available.</p>
     <form action="{{ url_for('instructor.end_session', public_code=state.public_code) }}" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit">End session</button>
+      <button class="button button--danger" type="submit">End session</button>
     </form>
   {% else %}
     <h2>Session ended</h2>

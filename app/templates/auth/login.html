@@ -1,9 +1,10 @@
 {% extends 'base.html' %}
 {% from 'auth/_fields.html' import field %}
 {% block title %}Instructor login — Take A Number{% endblock %}
+{% block main_class %}container container--form page-content{% endblock %}
 {% block content %}
   <h1>Instructor login</h1>
-  <form method="post">
+  <form method="post" class="panel">
     {{ form.hidden_tag() }}
     {{ field(form.email, 'username') }}
     {{ field(form.password, 'current-password') }}

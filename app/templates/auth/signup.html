@@ -1,11 +1,12 @@
 {% extends 'base.html' %}
 {% from 'auth/_fields.html' import field %}
 {% block title %}Instructor sign-up — Take A Number{% endblock %}
+{% block main_class %}container container--form page-content{% endblock %}
 {% block content %}
   <h1>Create an instructor account</h1>
   <p>Students do not need accounts.</p>
   <p>Use a password of 15–128 characters. Spaces are allowed.</p>
-  <form method="post">
+  <form method="post" class="panel">
     {{ form.hidden_tag() }}
     {{ field(form.display_name, 'name') }}
     {{ field(form.email, 'username') }}

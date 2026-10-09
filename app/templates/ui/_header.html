@@ -1,0 +1,21 @@
+{% from 'ui/components.html' import icon, button_link %}
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href="{{ url_for('public.landing') }}" aria-label="Take A Number home">
+      <span class="brand-mark">{{ icon('ticket') }}</span><span>Take A Number</span>
+    </a>
+    <nav class="site-nav" aria-label="Main navigation">
+      {% if current_user.is_authenticated %}
+        <a href="{{ url_for('instructor.dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('instructor.preferences') }}">Settings</a>
+        <form action="{{ url_for('auth.logout') }}" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="button button--secondary" type="submit">Log out</button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('auth.login') }}">Log In</a>
+        {{ button_link('Sign Up', url_for('auth.signup')) }}
+      {% endif %}
+    </nav>
+  </div>
+</header>

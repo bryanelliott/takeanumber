@@ -1,0 +1,10 @@
+{% from 'ui/components.html' import alert %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-messages stack">
+      {% for category, message in messages %}
+        {{ alert(message, 'danger' if category == 'error' else category) }}
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}

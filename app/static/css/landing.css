@@ -1,0 +1,29 @@
+.landing { padding-top: var(--space-7); }
+.hero-intro { display: grid; gap: var(--space-5); margin-bottom: var(--space-6); }
+.eyebrow { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); }
+.status-dot { width: .5rem; height: .5rem; flex: 0 0 auto; border-radius: var(--radius-pill); background: var(--color-primary); }
+.hero-intro h1 { margin: var(--space-5) 0 0; font-size: var(--font-size-display); line-height: 1.07; letter-spacing: -.05em; }
+.hero-intro h1 span { color: var(--color-primary); }
+.hero-copy { align-self: end; max-width: 32rem; }
+.lead { font-size: var(--font-size-lg); color: var(--color-text-muted); }
+.hero-note { font-size: var(--font-size-sm); color: var(--color-text-muted); }
+.hero-artwork { margin: 0; border-radius: var(--radius-lg); overflow: hidden; background: var(--color-surface-muted); box-shadow: var(--shadow-md); }
+.hero-artwork img { display: block; width: 100%; height: auto; aspect-ratio: 1672 / 941; }
+.hero-artwork figcaption { padding: var(--space-3) var(--space-5); color: var(--color-text-muted); font-size: var(--font-size-sm); background: var(--color-surface); border: 1px solid var(--color-border); border-top: 0; border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+.section-heading { margin-bottom: var(--space-7); }
+.section-heading h2 { margin-block: var(--space-3) var(--space-4); font-size: var(--font-size-heading); }
+.section-heading > p:last-child { color: var(--color-text-muted); }
+.feature { border-top: 1px solid var(--color-border); padding-top: var(--space-5); }
+.feature-icon { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: var(--radius-md); background: var(--color-surface-muted); color: var(--color-primary); }
+.feature h3 { margin-block: var(--space-5) var(--space-3); }
+.feature p { color: var(--color-text-muted); max-width: 38ch; margin-bottom: 0; }
+.student-note { justify-content: space-between; background: var(--color-surface-muted); }
+.student-note h2 { font-size: var(--font-size-lg); margin-block: 0 var(--space-2); }
+.student-note p { margin: 0; color: var(--color-text-muted); }
+.student-note-label { color: var(--color-primary); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); }
+
+@media (min-width: 48rem) {
+  .landing { padding-top: var(--space-8); }
+  .hero-intro { grid-template-columns: 1.1fr 1fr; align-items: end; gap: var(--space-7); margin-bottom: var(--space-7); }
+  .feature-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

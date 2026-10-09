@@ -37,6 +37,7 @@ def create_app(config=None):
     from app.auth.rate_limit import init_auth_rate_limit
     from app.auth.services import load_instructor
     from app.instructor import blueprint as instructor_blueprint
+    from app.public import blueprint as public_blueprint
     from app.queue import blueprint as queue_blueprint
 
     # Count authentication POST attempts even when CSRF rejects the request.
@@ -52,6 +53,7 @@ def create_app(config=None):
     app.register_blueprint(auth_blueprint)
     app.register_blueprint(instructor_blueprint)
     app.register_blueprint(queue_blueprint)
+    app.register_blueprint(public_blueprint)
     app.cli.add_command(check_db)
     app.cli.add_command(deploy_upgrade)
     init_socketio(app)
