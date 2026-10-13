@@ -12,8 +12,8 @@ The visual direction is calm and approachable: forest green actions, blue links,
 neutral surfaces, legible system typography, subtle borders and shadows. Text sits
 above the landscape, with the entire image visible at every size. The shared shell
 lightly improves instructor and authentication pages. The Master View retains its
-two-column queue/QR layout and 700px stacking breakpoint. Its old inline CSS now
-lives in `master.css`. The independent student `queue/base.html`, queue layouts,
+two-column queue/QR layout in these initial milestones; Milestone 2.3 below replaces
+that layout. Its CSS lives in `master.css`. The independent student `queue/base.html`, queue layouts,
 alert emphasis, and real-time scripts are unchanged; their dedicated redesign is
 future work.
 
@@ -178,3 +178,138 @@ Manual follow-up on a running development/staging instance:
 Deploy through the existing CI/Azure workflow, including the new blueprint,
 templates, stylesheets and artwork in the release commit. No settings or migration
 changes are required. Production startup still runs its existing migration gate.
+
+## Milestone 2.3 — Master View
+
+### Layout and shared components
+
+The Master remains the existing owner-protected
+`/instructor/sessions/<public_code>/master` endpoint. No route, queue service,
+model, database configuration, or deployment setting changed. The repository
+uses SQL Server/Azure SQL, rather than PostgreSQL.
+
+`instructor/master.html` owns the persistent heading, presentation toggle, two-column
+layout, QR panel, and polite announcement region. `_master_state.html` contains
+the replaceable server-authoritative state: serving/next panels, waiting count,
+first five waiting entries, actions, and ended state. The current ticket number is
+dominant, followed by the optional name. Empty states explain that no student is
+serving or waiting. Names remain escaped and wrap without truncation; browser
+identifiers never appear in the display.
+
+`master.css` composes existing semantic colors, typography, spacing, radii, focus
+and buttons. It introduces `.queue-status`, `.ticket-number`, `.status-label`,
+`.queue-count`, `.waiting-list`, `.master-toolbar`, and `.join-panel` within the
+Master stylesheet. Keep future Client-specific styles separate; promote patterns
+into the shared system only when another view needs them. Landing, authentication,
+settings and Client templates are not restyled by this milestone.
+
+### Responsive sizing and the QR
+
+At 64rem (1024px at default font size), content uses two equal grid columns.
+The right panel is sticky while the instructor scrolls the waiting list/controls.
+The SVG retains its existing square geometry and four-module white quiet zone,
+black pattern and white background. Its normal size is the smaller of available
+column width and viewport height minus 20rem, with a 16rem lower size bound when
+space permits. Presentation mode reduces that height allowance to 12rem. Image
+height remains automatic; neither pattern nor quiet zone is cropped or overlaid.
+There is no fixed page height and long content can expand naturally.
+
+Below 64rem, status panels appear first, then the QR, then secondary queue details
+and controls. The QR can grow to 36rem on portrait tablets. Mobile views scroll
+normally rather than squeezing the entire display into one screen. Shared navigation
+is compact on the Master and the marketing footer is hidden.
+
+The QR endpoint still requires the owning authenticated instructor and an active
+session. It uses `url_for('queue.client', ..., _external=True)` and the request
+origin, also shown as the clickable fallback URL. No hostname is hardcoded.
+Its image now sits **outside `#live-state`**, so socket invalidations and polling
+do not replace it or request/regenerate the SVG. `master-view.js` removes the panel
+when an authoritative update reports session end or lost access. A newly loaded
+ended page never includes the QR.
+
+### Presentation and instructor actions
+
+Presentation Mode is a local CSS class toggled by a `type="button"` control. It
+hides navigation, session metadata, waiting-list details and secondary controls,
+and enlarges the ticket/QR space. Done or Serve next remains available so the
+instructor can advance the queue while projecting. Exit Presentation Mode and
+Escape restore the standard interface. Ending a session or losing access exits
+presentation automatically. The mode does not invoke fullscreen, send a request,
+write a database value, change queue order, or add an endpoint.
+
+The preference is stored in `sessionStorage`, scoped to this session's Master URL
+and tab, so ordinary form navigation restores it. If storage is blocked, the toggle
+still works for the current page. Without JavaScript, the toggle stays hidden and
+the standard view, QR and POST forms continue to work.
+
+Serve next, Done and End session remain ordinary CSRF-protected POST forms using
+the same endpoints, displayed entry IDs and redirect behavior. There was no
+existing confirmation modal to replace. Dashboard, Settings, logout and manual
+Refresh remain available in standard mode. A successful action still performs the
+existing full-page redirect; the QR is fetched once for that new document. This
+milestone removes QR reloads from background updates, not from normal navigation.
+
+### Live updates and accessibility
+
+No additional polling loop or socket subscription is added. `master-view.js`
+listens to the existing `queue:state` event. `live-updates.js` now also emits
+`queue:before-state` immediately before replacement/clearing, allowing focus to
+be restored to the same request's control. When that request changes, focus moves
+to the status panel rather than a Done button for a different request. Focus also
+recovers when an ended/unavailable state removes the currently focused control.
+
+A persistent, polite live region announces a text summary only when serving,
+next or waiting information changes. The whole queue is not an ARIA live region.
+Connection status writes are deduplicated in the shared updater, avoiding repeated
+announcements for identical polls. Student name-draft preservation, serialization,
+stale-response rejection, CSRF refresh and authorization failure handling remain
+intact. No animations are added; shared reduced-motion and focus conventions apply.
+
+### Tests and display review
+
+`test_master.py` exercises empty/waiting/serving/completed/ended states, read-only
+rendering, owner boundaries, exact QR destination and quiet-zone configuration,
+and separation of QR from state fragments. Existing tests continue to exercise
+actions, stale submissions, escaping, real-time updates, and Client behavior.
+`browser_master_view.html` runs through the existing optional browser test runner
+and checks toggle/Escape, blocked storage, zero mutation requests from mode changes,
+QR node persistence, announcement deduplication, keyboard focus, and QR removal
+on session end or authorization loss.
+
+Milestone 2.3 validation: `ruff check .` passed. The full Docker `pytest` run
+passed 368 tests and skipped seven optional browser cases because the container
+has no browser. All seven browser cases then passed using installed host Chrome,
+including the narrow-screen authorization-loss focus regression.
+
+During implementation, Chrome rendered the actual templates with synthetic queue
+snapshots at 320×740, 390×844, 430×932, 768×1024, 1024×768, 1280×720, 1440×900,
+1920×1080 and 2560×1440 in both modes. QR images loaded, remained square and there
+was no horizontal overflow. All three primary elements fit above the fold at
+1920×1080 in standard mode and at tested laptop/projector sizes in presentation
+mode. Long names, large ticket numbers and 200% text scaling were also checked
+without horizontal overflow. Rendering used synthetic data and a stubbed socket;
+SQL Server and real-time behavior are covered by the regression suite.
+
+Manual checks on staging/production:
+
+1. Project an active session at 1920×1080 and 2560×1440, then try 1280×720 and
+   1440×900. Confirm legibility at the back of the room and scan the QR from several
+   physical student phones. Desktop rendering cannot verify camera distance,
+   projector contrast, glare or network reachability.
+2. Join and leave from two student browsers. Serve next, press Done, and repeat from
+   another authorized Master browser. Check numbers/names/counts and the stable QR.
+3. Toggle presentation using mouse and keyboard. Press Escape; reload/submit a form
+   and verify the tab preference. Test storage denied and JavaScript disabled.
+4. At 320–430px and 768px, verify ordering and access to all controls. Try browser
+   zoom at 125%, 150% and 200%, unusually long names, and an empty queue.
+5. End the session from another Master; confirm the QR disappears and the ended
+   message appears. Log out in another tab and confirm a subsequent update clears
+   private state and removes the QR. Check screen-reader announcements on actual
+   state changes, rather than every poll.
+
+Very long names, unusually large ticket numbers, short windows or increased zoom
+may require scrolling; complete readable content takes precedence over forcing a
+fixed-height layout. No physical projector, mobile camera, Safari/iOS or screen-reader
+device audit was performed. Deploy changed templates, CSS and JavaScript together
+through the existing workflow. There are **no new dependencies, configuration
+changes, or database migrations**.

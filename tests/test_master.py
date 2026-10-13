@@ -38,7 +38,7 @@ def test_empty_waiting_serving_completed_and_ended_views(
     base = f"/instructor/sessions/{queue_session[1]}"
     empty = client.get(base + "/master")
     assert empty.status_code == 200 and empty.headers["Cache-Control"] == "no-store"
-    assert "No one currently serving" in empty.text and "Queue empty" in empty.text
+    assert "No student currently being served" in empty.text and "Queue empty" in empty.text
     assert "Total waiting: 0" in empty.text
     assert ">Done</button>" not in empty.text and ">Serve next</button>" not in empty.text
     first, second = enqueue(app, queue_session[1], 2)
@@ -55,9 +55,9 @@ def test_empty_waiting_serving_completed_and_ended_views(
     assert client.post(base + "/done", data=hidden_fields(serving)).status_code == 303
     last = client.get(base + "/master")
     assert hidden_fields(last)["entry_id"] == str(second)
-    assert "Total waiting: 0" in last.text and "No one next" in last.text
+    assert "Total waiting: 0" in last.text and "No students waiting" in last.text
     client.post(base + "/done", data=hidden_fields(last))
-    assert "No one currently serving" in client.get(base + "/master").text
+    assert "No student currently being served" in client.get(base + "/master").text
     client.post(base + "/end", data=hidden_fields(last))
     ended = client.get(base + "/master")
     assert "Session ended" in ended.text
@@ -162,6 +162,7 @@ def test_qr_encodes_exact_public_url_and_is_only_for_owned_active_session(
     assert response.headers["Cache-Control"] == "no-store"
     expected_url = f"https://lab.example.edu/session/{queue_session[1]}"
     assert make.call_args.args == (expected_url,)
+    assert make.call_args.kwargs["border"] == 4
     svg = ElementTree.fromstring(response.data)
     assert svg.tag == "{http://www.w3.org/2000/svg}svg"
     assert svg.find("{http://www.w3.org/2000/svg}path").attrib["d"]
@@ -174,3 +175,45 @@ def test_qr_encodes_exact_public_url_and_is_only_for_owned_active_session(
     with app.app_context():
         sessions.end_session(*queue_session)
     assert client.get(base + "/qr.svg").status_code == 404
+
+
+def test_master_redesign_keeps_qr_outside_updates_and_rendering_read_only(
+    app, queue_session, master_browser
+):
+    first, second = enqueue(app, queue_session[1], 2)
+    with app.app_context():
+        queue.begin_serving(*queue_session, first)
+        before = [
+            (entry.id, entry.status, entry.updated_at)
+            for entry in db.session.scalars(db.select(QueueEntry).order_by(QueueEntry.queue_number))
+        ]
+    client = master_browser()
+    base = f"/instructor/sessions/{queue_session[1]}"
+    page = client.get(base + "/master")
+    fragment = client.get(base + "/state")
+    assert page.status_code == fragment.status_code == 200
+    assert 'id="master-join"' in page.text and base + "/qr.svg" in page.text
+    assert "Scan to join the queue" in page.text
+    assert 'id="presentation-toggle"' in page.text and 'type="button"' in page.text
+    assert "master-view.js" in page.text and 'aria-live="polite"' in page.text
+    assert "qr.svg" not in fragment.text and "master-join" not in fragment.text
+    assert "Currently Serving: number 1, Name 0. Next Up: number 2, Name 1." in fragment.text
+    assert 'data-master-status="active"' in fragment.text
+    with app.app_context():
+        after = [
+            (entry.id, entry.status, entry.updated_at)
+            for entry in db.session.scalars(db.select(QueueEntry).order_by(QueueEntry.queue_number))
+        ]
+        assert after == before
+        assert db.session.get(QueueEntry, second).status == "waiting"
+
+
+def test_master_page_and_fragment_enforce_owner(app, queue_session, master_browser):
+    with app.app_context():
+        other_id = register_instructor(
+            "other-view@example.edu", "Other", "a sufficiently long password"
+        ).id
+    base = f"/instructor/sessions/{queue_session[1]}"
+    for suffix in ("/master", "/state"):
+        assert app.test_client().get(base + suffix).status_code == 302
+        assert master_browser(other_id).get(base + suffix).status_code == 404

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Master View browser checks</title>
+<link rel="stylesheet" href="../app/static/css/design-system.css">
+<link rel="stylesheet" href="../app/static/css/master.css">
+<body class="master-page">
+<header class="site-header">Navigation</header>
+<main class="master-content">
+  <div class="master-heading"><h1>Master View</h1><button id="presentation-toggle" type="button" aria-pressed="false" hidden>Presentation Mode</button></div>
+  <div class="master-layout">
+    <div id="live-state" tabindex="-1"></div>
+    <aside id="master-join" class="join-panel"><h2>Scan to join the queue</h2><img class="qr" alt="Test QR placeholder" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='white'/%3E%3C/svg%3E"></aside>
+  </div>
+  <p id="master-announcement" class="screen-reader-only" role="status" aria-live="polite"></p>
+  <p id="live-status" role="status"></p>
+  <div id="live-config" data-view="master" data-public-code="example" data-state-url="/test-state" data-csrf-token="initial"></div>
+</main>
+<script>
+  if (location.hash === '#storage-blocked') Object.defineProperty(window, 'sessionStorage', {get() { throw new Error('Storage denied'); }});
+  const target = document.getElementById('live-state');
+  const state = (number = 12) => `<div data-live-csrf="fresh" data-master-status="active">
+    <p hidden data-master-summary>Currently Serving: number ${number}. Next Up: number ${number + 1}. Total waiting: 3.</p>
+    <section class="queue-status queue-status--serving" tabindex="-1" data-focus-fallback><h2>Currently Serving</h2><p class="ticket-number">${number}</p>
+      <form method="post" action="/done"><input name="entry_id" type="hidden" value="entry-${number}"><button data-master-focus="advance">Done</button></form></section>
+    <section class="queue-status queue-status--next"><h2>Next Up</h2><p class="ticket-number ticket-number--next">${number + 1}</p></section>
+    <p class="master-secondary">Waiting queue and controls</p></div>`;
+  target.innerHTML = state();
+  const handlers = {}, requests = [];
+  let periodic;
+  window.setInterval = (callback) => { periodic = callback; return 1; };
+  const socket = {connected: true, active: true, on(name, callback) { handlers[name] = callback; }, connect() {}, disconnect() { this.connected = false; }};
+  window.io = () => socket;
+  window.fetch = (url, options) => new Promise(resolve => requests.push({url, options, resolve}));
+</script>
+<script src="../app/static/live-updates.js"></script>
+<script src="../app/static/master-view.js"></script>
+<script>
+  (async () => {
+    const assert = (value, message) => { if (!value) throw new Error(message); };
+    const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+    const respond = async (html, extra = {}) => {
+      const request = requests.shift();
+      assert(request.url === '/test-state' && !request.options.method, 'Only authoritative GET state reads');
+      request.resolve({ok: true, status: 200, redirected: false, text: async () => html, ...extra});
+      await tick();
+    };
+    try {
+      const toggle = document.getElementById('presentation-toggle');
+      const qr = document.querySelector('.qr');
+      const original = target.innerHTML;
+      const announcement = document.getElementById('master-announcement');
+      let announcements = 0, connectionNotices = 0;
+      new MutationObserver(() => announcements++).observe(announcement, {childList: true});
+      new MutationObserver(() => connectionNotices++).observe(document.getElementById('live-status'), {childList: true});
+      assert(!toggle.hidden, 'Presentation mode is available with JavaScript');
+      assert(document.documentElement.scrollWidth <= innerWidth, 'No horizontal overflow');
+      const qrBounds = qr.getBoundingClientRect();
+      assert(Math.abs(qrBounds.width - qrBounds.height) < 1, 'QR stays square');
+      toggle.click();
+      assert(document.body.classList.contains('is-presenting') && toggle.getAttribute('aria-pressed') === 'true', 'Enter presentation mode');
+      assert(toggle.textContent === 'Exit Presentation Mode', 'Obvious exit control');
+      assert(getComputedStyle(document.querySelector('.site-header')).display === 'none', 'Hide navigation');
+      assert(target.innerHTML === original && requests.length === 0, 'Mode toggle makes no request or queue change');
+      handlers.queue_changed();
+      document.querySelector('[data-master-focus]').focus();
+      await respond(state());
+      assert(document.activeElement.dataset.masterFocus === 'advance', 'Keep focus for same request');
+      assert(document.querySelector('.qr') === qr, 'Keep QR node during refresh');
+      assert(announcements === 0, 'No announcement for unchanged queue');
+      periodic(); await respond(state());
+      assert(connectionNotices === 1, 'Do not repeat connection notices on polling');
+      handlers.queue_changed(); await respond(state(13));
+      assert(document.activeElement.hasAttribute('data-focus-fallback'), 'Do not focus Done for a new request');
+      assert(announcements === 1 && announcement.textContent.includes('number 13'), 'Announce changed queue once');
+      assert(document.body.classList.contains('is-presenting'), 'Live updates preserve presentation');
+      assert(document.querySelector('.qr') === qr, 'QR survives advancing');
+      document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
+      assert(!document.body.classList.contains('is-presenting') && document.activeElement === toggle, 'Escape restores standard view and focus');
+      toggle.click();
+      if (location.hash === '#auth-loss') {
+        toggle.focus();
+        handlers.queue_changed(); await respond('Login page', {redirected: true});
+        assert(!target.textContent.includes('number 13'), 'Clear private state on authorization loss');
+        assert(document.activeElement === target, 'Recover focus when the presentation toggle disappears');
+      } else {
+        handlers.queue_changed(); await respond('<div data-live-csrf="fresh" data-master-status="ended"><p data-master-summary>Session ended.</p></div>');
+      }
+      assert(!document.getElementById('master-join'), 'Remove stale QR after ending or auth loss');
+      assert(toggle.hidden && !document.body.classList.contains('is-presenting'), 'Leave presentation when view is unavailable');
+      document.body.dataset.result = 'passed';
+    } catch (error) {
+      document.body.dataset.result = 'failed'; document.body.append(String(error));
+    }
+  })();
+</script>
+</body>
+</html>

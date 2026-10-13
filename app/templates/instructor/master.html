@@ -1,12 +1,33 @@
 {% extends 'base.html' %}
 {% block title %}Master View — Take A Number{% endblock %}
 {% block body_class %}master-page{% endblock %}
+{% block main_class %}master-content{% endblock %}
 {% block head %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/master.css') }}">
 {% endblock %}
 {% block content %}
-  <div id="live-state">{% include 'instructor/_master_state.html' %}</div>
+  <div class="master-heading cluster">
+    <div>
+      <p class="master-eyebrow">Instructor workspace</p>
+      <h1>Master View</h1>
+    </div>
+    <button id="presentation-toggle" class="button button--secondary" type="button" aria-pressed="false" hidden>Presentation Mode</button>
+  </div>
+  <div class="master-layout">
+    <div id="live-state" tabindex="-1">{% include 'instructor/_master_state.html' %}</div>
+    {% if state.status == 'active' %}
+      <aside id="master-join" class="join-panel" aria-labelledby="join-heading">
+        <h2 id="join-heading" class="status-label">Scan to join the queue</h2>
+        <p class="join-hint">Your question. Your place in line.</p>
+        <img class="qr" width="768" height="768" src="{{ url_for('instructor.session_qr', public_code=state.public_code) }}" alt="QR code linking to this session's student Client View">
+        <a class="join-url" href="{{ client_url }}">{{ client_url }}</a>
+        <p class="join-hint">Open student Client View · No student account needed</p>
+      </aside>
+    {% endif %}
+  </div>
+  <p id="master-announcement" class="screen-reader-only" role="status" aria-live="polite" aria-atomic="true"></p>
   {% set live_view = 'master' %}
   {% set live_state_url = url_for('instructor.live_state', public_code=state.public_code) %}
   {% include '_live_updates.html' %}
+  <script defer src="{{ url_for('static', filename='master-view.js') }}"></script>
 {% endblock %}

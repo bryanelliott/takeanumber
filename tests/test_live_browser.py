@@ -15,6 +15,9 @@ pytestmark = pytest.mark.browser
     "fixture_name",
     [
         "browser_live_updates.html",
+        "browser_master_view.html",
+        "browser_master_view.html#storage-blocked",
+        "browser_master_view.html#auth-loss",
         "browser_student_alerts.html",
         "browser_student_alerts.html#unsupported",
         "browser_student_alerts.html#blocked",

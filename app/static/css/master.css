@@ -1,10 +1,77 @@
-/* Existing Master layout, kept separate from the shared navigation and tokens. */
-.master-page { font-size: 1.15rem; }
-.master-page .refresh { display: inline-block; min-height: 44px; padding: .6rem 1rem; }
-.master { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 2rem; }
-.master .number { font-size: clamp(2.5rem, 7vw, 5rem); margin: .3rem 0; font-weight: bold; }
-.master .name, .master .join-url { overflow-wrap: anywhere; }
-.master .qr { display: block; width: 100%; max-width: 24rem; height: auto; background: white; }
-.master .done { font-size: 1.5rem; font-weight: bold; }
-.master li { margin: .7rem 0; }
-@media (max-width: 700px) { .master { grid-template-columns: 1fr; } }
+/* Master-only compositions of shared tokens. Content may always grow. */
+.master-page .header-inner { width: calc(100% - var(--space-6)); padding-block: var(--space-2); }
+.master-content { width: calc(100% - var(--space-6)); margin-inline: auto; padding-block: var(--space-5); }
+.master-heading { justify-content: space-between; margin-bottom: var(--space-5); }
+.master-heading h1 { font-size: var(--font-size-xl); margin: 0; }
+#presentation-toggle[hidden] { display: none; }
+.master-eyebrow { font-size: var(--font-size-sm); color: var(--color-text-muted); margin: 0; }
+.master-layout { display: grid; gap: var(--space-5); align-items: start; }
+.master-layout > * { min-width: 0; }
+.queue-status { padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-lg); margin-bottom: var(--space-4); background: var(--color-surface); }
+.queue-status:focus { outline: var(--focus-ring); outline-offset: 4px; }
+.queue-status--serving { color: var(--color-surface); background: var(--color-primary); border-color: var(--color-primary); }
+.status-heading { justify-content: space-between; gap: var(--space-2); }
+.status-label { margin: 0; font-size: var(--font-size-base); font-weight: var(--font-weight-bold); letter-spacing: .08em; text-transform: uppercase; }
+.session-badge { font-size: var(--font-size-sm); border: 1px solid currentColor; border-radius: var(--radius-pill); padding: .15rem .65rem; }
+.ticket-number { font-size: clamp(4.5rem, 9vw, 10rem); line-height: 1; font-weight: var(--font-weight-bold); letter-spacing: -.04em; font-variant-numeric: tabular-nums; margin: var(--space-3) 0; overflow-wrap: anywhere; }
+.ticket-number--next { font-size: clamp(3.5rem, 6vw, 7rem); color: var(--color-primary); }
+.ticket-name { font-size: clamp(1.25rem, 2vw, 2rem); line-height: 1.25; margin: var(--space-2) 0 var(--space-4); overflow-wrap: anywhere; }
+.queue-action { margin-top: var(--space-4); }
+.queue-action button { min-width: 8rem; font-size: var(--font-size-lg); }
+.queue-status--serving button { background: var(--color-surface); color: var(--color-primary); }
+.queue-status--serving button:hover { background: var(--color-surface-muted); }
+.queue-status--serving button:focus-visible { outline-color: var(--color-surface); }
+.queue-count { font-size: var(--font-size-base); font-weight: var(--font-weight-medium); margin: 0; }
+.queue-empty { font-size: clamp(1.5rem, 2.3vw, 2.5rem); font-weight: var(--font-weight-medium); line-height: 1.25; margin-block: var(--space-6) var(--space-4); }
+.status-help { margin: 0; }
+.waiting-panel { padding: var(--space-4) 0; }
+.waiting-panel h2 { font-size: var(--font-size-lg); margin-block: 0 var(--space-2); }
+.waiting-list { list-style: none; margin: 0; padding: 0; }
+.waiting-list li { display: flex; flex-wrap: wrap; gap: var(--space-3); padding-block: var(--space-3); border-bottom: 1px solid var(--color-border); }
+.waiting-ticket { font-weight: var(--font-weight-bold); min-width: 6.5rem; }
+.waiting-list .name { overflow-wrap: anywhere; min-width: 0; }
+.master-toolbar { padding-block: var(--space-4); }
+.session-detail { font-size: var(--font-size-sm); color: var(--color-text-muted); overflow-wrap: anywhere; }
+.back-link { display: inline-flex; align-items: center; min-height: 44px; }
+.join-panel { text-align: center; padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: white; }
+.join-panel .status-label { font-size: clamp(1rem, 1.7vw, 1.5rem); }
+.join-hint { font-size: var(--font-size-sm); color: var(--color-text-muted); margin: var(--space-2) 0; }
+.qr { display: block; width: 100%; height: auto; aspect-ratio: 1; margin: var(--space-2) auto; background: white; }
+.join-url { display: inline-flex; align-items: center; min-height: 44px; max-width: 100%; overflow-wrap: anywhere; font-size: var(--font-size-sm); }
+.master-page #live-status { font-size: var(--font-size-sm); color: var(--color-text-muted); margin-block: var(--space-4) 0; }
+.master-page .site-footer { display: none; }
+.ended-panel { margin-bottom: var(--space-5); }
+.master-layout #live-state.is-unavailable { display: block; }
+#live-state.is-unavailable:focus { outline: var(--focus-ring); outline-offset: 4px; }
+
+/* Status panels, then QR, then secondary controls on phones and narrow tablets. */
+@media (max-width: 63.99rem) {
+  .master-layout, .master-layout #live-state, .master-layout [data-master-status] { display: contents; }
+  .master-content { display: flex; flex-direction: column; }
+  .master-heading { order: -3; }
+  .flash-messages { order: -4; }
+  .queue-status { order: -2; }
+  .join-panel { order: -1; margin-bottom: var(--space-5); }
+  .qr { max-width: 36rem; }
+}
+@media (min-width: 64rem) {
+  .master-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); }
+  .join-panel { position: sticky; top: var(--space-4); }
+  .qr { width: min(100%, max(16rem, calc(100svh - 20rem))); }
+}
+
+/* Local preference: no fixed page height, clipping or fullscreen dependency. */
+.master-page.is-presenting .site-header,
+.master-page.is-presenting .master-secondary,
+.master-page.is-presenting .master-eyebrow,
+.master-page.is-presenting .session-badge,
+.master-page.is-presenting .join-hint { display: none; }
+.master-page.is-presenting .master-content { padding-top: var(--space-3); }
+.master-page.is-presenting .master-heading { margin-bottom: var(--space-3); }
+.master-page.is-presenting .queue-status { padding: var(--space-4) var(--space-5); }
+.master-page.is-presenting .ticket-number { font-size: clamp(4.5rem, min(11vw, 18svh), 15rem); }
+.master-page.is-presenting .ticket-number--next { font-size: clamp(3.5rem, min(8vw, 12svh), 10rem); }
+.master-page.is-presenting .queue-empty { margin-block: var(--space-5); }
+@media (min-width: 64rem) {
+  .master-page.is-presenting .qr { width: min(100%, max(16rem, calc(100svh - 12rem))); }
+}

@@ -11,6 +11,9 @@
   let stopped = false;
   let timer;
   let requestController;
+  function setStatus(message) {
+    if (status.textContent !== message) status.textContent = message;
+  }
   const socket = typeof window.io === "function" ? window.io({
     path: config.dataset.socketPath,
     autoConnect: false,
@@ -41,6 +44,7 @@
     const focused = name && document.activeElement === name;
     const selection = focused ? [name.selectionStart, name.selectionEnd] : null;
     if (name && replacement) replacement.value = name.value;
+    document.dispatchEvent(new Event("queue:before-state"));
     target.replaceChildren(next.content);
     document.dispatchEvent(new Event("queue:state"));
     if (focused && replacement) {
@@ -66,9 +70,10 @@
           if (stopped) return;
           if (response.redirected || [401, 403, 404, 409].includes(response.status)) {
             stop();
+            document.dispatchEvent(new Event("queue:before-state"));
             target.textContent = "This view is no longer available. Reload the page to continue.";
             document.dispatchEvent(new Event("queue:state"));
-            status.textContent = "Live updates stopped.";
+            setStatus("Live updates stopped.");
             return;
           }
           if (!response.ok) throw new Error("State unavailable");
@@ -77,16 +82,16 @@
           // A newer notice arrived while reading: fetch again, never apply it backwards.
           if (pending) continue;
           replaceState(html);
-          status.textContent = socket?.connected
+          setStatus(socket?.connected
             ? "Live updates connected."
-            : "Live connection unavailable; checking for updates periodically.";
+            : "Live connection unavailable; checking for updates periodically.");
           if (socket && !socket.connected && !socket.active) socket.connect();
         } finally {
           clearTimeout(timeout);
         }
       }
     } catch (_) {
-      if (!stopped) status.textContent = "Updates unavailable. Use Refresh to try again.";
+      if (!stopped) setStatus("Updates unavailable. Use Refresh to try again.");
     } finally {
       fetching = false;
     }
@@ -95,10 +100,10 @@
   socket?.on("queue_changed", refresh);
   socket?.on("connect", refresh); // reconcile changes missed before connection/reconnection
   socket?.on("disconnect", () => {
-    if (!stopped) status.textContent = "Live connection interrupted; reconnecting.";
+    if (!stopped) setStatus("Live connection interrupted; reconnecting.");
   });
   socket?.on("connect_error", () => {
-    if (!stopped) status.textContent = "Live connection unavailable; checking periodically.";
+    if (!stopped) setStatus("Live connection unavailable; checking periodically.");
   });
   timer = setInterval(refresh, 30000); // also recover from a failed post-commit notification
   window.addEventListener("pagehide", stop); // Exit/disconnect never invokes Leave Queue
