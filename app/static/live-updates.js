@@ -45,11 +45,18 @@
     const selection = focused ? [name.selectionStart, name.selectionEnd] : null;
     if (name && replacement) replacement.value = name.value;
     document.dispatchEvent(new Event("queue:before-state"));
-    target.replaceChildren(next.content);
+    // Client regions can retain unchanged controls; other views use the usual replacement.
+    const render = new CustomEvent("queue:render", {
+      cancelable: true, detail: {fragment: next.content},
+    });
+    if (config.dataset.view !== "client" || document.dispatchEvent(render)) {
+      target.replaceChildren(next.content);
+    }
     document.dispatchEvent(new Event("queue:state"));
-    if (focused && replacement) {
-      replacement.focus({preventScroll: true});
-      replacement.setSelectionRange(...selection);
+    const currentName = target.querySelector('input[name="display_name"]');
+    if (focused && currentName) {
+      currentName.focus({preventScroll: true});
+      currentName.setSelectionRange(...selection);
     }
   }
 

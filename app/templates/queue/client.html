@@ -1,19 +1,40 @@
 {% extends 'queue/base.html' %}
 {% block content %}
-  <div id="live-state">{% include 'queue/_client_state.html' %}</div>
+  <div id="live-state" tabindex="-1">{% include 'queue/_client_state.html' %}</div>
+  <p id="client-announcement" class="screen-reader-only" role="status" aria-live="polite" aria-atomic="true"></p>
   <p id="student-announcement" class="screen-reader-only" role="status" aria-live="polite" aria-atomic="true"></p>
+  <nav class="client-navigation cluster" aria-label="Queue navigation">
+    <a class="button button--secondary" href="{{ url_for('queue.client', public_code=state.public_code) }}">Refresh status</a>
+    <a class="button button--secondary" href="{{ url_for('queue.exit_view', public_code=state.public_code) }}">Exit</a>
+  </nav>
+  <p class="client-note">Exit keeps your request in the queue. Leave Queue removes it.</p>
   <section id="student-alert-controls" hidden aria-labelledby="alert-controls-heading">
-    <h2 id="alert-controls-heading">Optional alerts for this page</h2>
-    <p>Enable a short sound or vibration for advance warnings, Next Up, or your turn,
-       when allowed by the instructor's settings.
-       The buttons test each alert. Keep this page open; device settings or a sleeping
-       browser may prevent alerts. The on-screen queue state always remains available.</p>
-    <button type="button" id="student-sound" aria-pressed="false" aria-describedby="student-sound-status">Enable and test sound</button>
-    <p id="student-sound-status" role="status">Sound is off.</p>
-    <button type="button" id="student-vibration" aria-pressed="false" aria-describedby="student-vibration-status">Enable and test vibration</button>
-    <p id="student-vibration-status" role="status">Vibration is off.</p>
-    <p>These choices last until you leave or reload this page. Visual alerts do not flash or move.</p>
+    <details class="client-options">
+      <summary><h2 id="alert-controls-heading">Optional alerts for this page</h2></summary>
+      <p>Enable a short sound or vibration for advance warnings, Next Up, or your turn,
+         when allowed by the instructor's settings.
+         The buttons test each alert. Keep this page open; device settings or a sleeping
+         browser may prevent alerts. The on-screen queue state always remains available.</p>
+      <div class="client-options-grid">
+        <div class="client-option">
+          <button class="button button--secondary" type="button" id="student-sound" aria-pressed="false" aria-describedby="student-sound-status">Enable and test sound</button>
+          <p id="student-sound-status" role="status">Sound is off.</p>
+        </div>
+        <div class="client-option">
+          <button class="button button--secondary" type="button" id="student-vibration" aria-pressed="false" aria-describedby="student-vibration-status">Enable and test vibration</button>
+          <p id="student-vibration-status" role="status">Vibration is off.</p>
+        </div>
+      </div>
+      <p>These choices last until you leave or reload this page. Visual alerts do not flash or move.</p>
+    </details>
   </section>
+  <details class="client-options">
+    <summary>About your place in this queue</summary>
+    <p class="client-note">No account is needed. Your place is saved in this browser using cookies.
+      Clearing cookies or changing browsers can lose access to a request.
+      People sharing a browser share its queue request.</p>
+  </details>
+  <script defer src="{{ url_for('static', filename='client-view.js') }}"></script>
   {% set live_view = 'client' %}
   {% set live_state_url = url_for('queue.live_state', public_code=state.public_code) %}
   {% include '_live_updates.html' %}

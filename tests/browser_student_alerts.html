@@ -125,6 +125,15 @@
         update("waiting", "next_up", "third");
         assert(sound.disabled && vibration.disabled, "instructor can disable media choices live");
         assert(announce.textContent === "" && document.title === "Student alert checks", "visual preference clears emphasis");
+        let repeatedMessages = 0;
+        const observer = new MutationObserver(records => repeatedMessages += records.length);
+        for (const region of [announce, document.getElementById("student-sound-status"), document.getElementById("student-vibration-status")]) {
+          observer.observe(region, {childList: true});
+        }
+        update("waiting", "next_up", "third");
+        await tick();
+        assert(repeatedMessages === 0, "unchanged polling does not repeat disabled-alert messages");
+        observer.disconnect();
         sound.click();
         assert(sounds === afterTest, "disabled sound cannot initialize");
         policy = {alertPolicy: "enabled", soundAllowed: "true", vibrationAllowed: "true", alertEnabled: "true", visualEnabled: "true"};

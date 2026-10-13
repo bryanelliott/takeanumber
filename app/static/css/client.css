@@ -1,0 +1,58 @@
+/* Student-only layouts composed from the shared design system. */
+.client-page { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+.client-container { width: min(calc(100% - 2rem), 66rem); margin-inline: auto; }
+.client-header { background: var(--color-surface); border-bottom: 1px solid var(--color-border); padding-top: env(safe-area-inset-top); }
+.client-header > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); padding-block: var(--space-3); }
+.client-header-label { color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.client-main { padding-block: var(--space-5); }
+.client-session { margin-bottom: var(--space-5); overflow-wrap: anywhere; color: var(--color-text-muted); }
+.client-grid { display: grid; gap: var(--space-5); align-items: start; }
+.client-grid > * { min-width: 0; }
+.client-page .panel { padding: var(--space-5); border-radius: var(--radius-lg); }
+.client-page .panel > h2:first-child { margin-top: 0; }
+.client-label { font-size: var(--font-size-sm); font-weight: var(--font-weight-bold); letter-spacing: .075em; text-transform: uppercase; margin: 0; }
+.client-badge { display: inline-block; padding: var(--space-1) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-pill); font-size: var(--font-size-sm); color: var(--color-text-muted); }
+.ticket-topline { justify-content: space-between; gap: var(--space-2); }
+.client-ticket { box-shadow: var(--shadow-md); }
+.client-ticket-number { font-size: clamp(5rem, 14vw, 9rem); color: var(--color-primary); font-weight: var(--font-weight-bold); line-height: 1.1; letter-spacing: -.04em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; margin-block: var(--space-4); }
+.client-ticket-name { font-size: var(--font-size-lg); overflow-wrap: anywhere; }
+.client-ticket h3 { font-size: clamp(1.35rem, 3vw, 1.75rem); margin-block: 0 var(--space-2); }
+.client-ticket p:last-child { margin-bottom: 0; }
+.student-alert { padding: var(--space-4); border: 2px solid; border-radius: var(--radius-md); animation: none; transition: none; }
+.next-alert { color: var(--color-warning); background: var(--color-warning-surface); border-style: dashed; }
+.serving-alert { color: var(--color-success); background: var(--color-success-surface); }
+.client-details h2 { font-size: var(--font-size-lg); margin-top: 0; }
+.client-metric { font-size: clamp(1.5rem, 4vw, 2rem); font-weight: var(--font-weight-medium); line-height: 1.25; margin-block: var(--space-4) var(--space-2); }
+.client-wait { margin-top: var(--space-5); padding-top: var(--space-5); border-top: 1px solid var(--color-border); }
+.client-intro h2 { font-size: var(--font-size-heading); margin-block: 0 var(--space-3); }
+.client-intro p { color: var(--color-text-muted); }
+.client-intro-icon { display: none; place-items: center; width: 48px; height: 48px; color: var(--color-primary); background: var(--color-surface-muted); border-radius: var(--radius-md); }
+.client-primary { width: 100%; min-height: 50px; }
+.client-page input[type="text"] { max-width: none; font-size: max(1rem, 16px); }
+.field-help { color: var(--color-text-muted); font-size: var(--font-size-sm); margin-top: var(--space-3); }
+.client-navigation { margin-block: var(--space-5) var(--space-2); }
+.client-navigation a { flex: 1; }
+.client-page .button { min-height: 48px; max-width: 100%; overflow-wrap: anywhere; }
+.client-note { font-size: var(--font-size-sm); color: var(--color-text-muted); }
+.leave-action { margin-top: var(--space-5); border-top: 1px solid var(--color-border); padding-top: var(--space-3); }
+.client-page summary { min-height: 48px; padding-block: var(--space-3); color: var(--color-text-muted); cursor: pointer; font-weight: var(--font-weight-medium); }
+.client-page summary:focus-visible, .client-page [data-client-fallback]:focus, .client-page #live-state:focus { outline: var(--focus-ring); outline-offset: 4px; }
+.client-page summary + p { margin-top: var(--space-3); }
+.client-page [hidden] { display: none; }
+.client-options { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--color-border); }
+.client-options h2 { font-size: var(--font-size-lg); margin: 0; display: inline; }
+.client-options-grid { display: grid; gap: var(--space-5); }
+.client-option { min-width: 0; }
+.client-option button { width: 100%; }
+.client-option p { color: var(--color-text-muted); font-size: var(--font-size-sm); margin-top: var(--space-2); }
+.client-page #live-status { padding: var(--space-3) var(--space-4); border-left: 3px solid var(--color-control-border); font-size: var(--font-size-sm); color: var(--color-text-muted); margin-block: var(--space-5); }
+.client-footer { padding-block: var(--space-5) max(var(--space-5), env(safe-area-inset-bottom)); color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.client-recovery { max-width: var(--width-form); margin-inline: auto; }
+@media (min-width: 48rem) {
+  .client-main { padding-block: var(--space-7); }
+  .client-grid { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--space-6); }
+  .client-page .panel { padding: var(--space-6); }
+  .client-intro-icon { display: inline-grid; }
+  .client-intro h2 { margin-block: var(--space-4); }
+  .client-options-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

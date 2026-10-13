@@ -1,3 +1,4 @@
+{% from 'ui/components.html' import icon, alert %}
 {% set alerts_allowed = state.preferences.alert_next_enabled or state.preferences.alert_serving_enabled %}
 {% set alert_enabled = state.preferences.permits(state.alert_state) %}
 {% set emphasize = alert_enabled and state.preferences.visual_alert_enabled %}
@@ -8,68 +9,77 @@
      data-sound-allowed="{{ 'true' if alerts_allowed and state.preferences.sound_alert_enabled else 'false' }}"
      data-vibration-allowed="{{ 'true' if alerts_allowed and state.preferences.vibration_enabled else 'false' }}"
      data-alert-policy="{{ state.preferences.policy_key }}">
-  <p>Help session with {{ state.instructor_name }}</p>
-  {% if error %}<p role="alert">{{ error }}</p>{% endif %}
-  {% if state.status == 'ended' %}
-    <h2>Session ended</h2>
-    <p>This session no longer accepts requests.</p>
-    {% if state.queue_number %}<p>Your request number was {{ state.queue_number }}.</p>{% endif %}
-  {% elif state.status in ('waiting', 'serving') %}
-    <p>Your number</p>
-    <p class="number">{{ state.queue_number }}</p>
-    {% if state.alert_state == 'serving' %}
-      <section{% if emphasize %} class="student-alert serving-alert"{% endif %} aria-labelledby="student-alert-heading" data-alert-message>
-        <h2 id="student-alert-heading"><span aria-hidden="true">&#10003;</span> It's your turn</h2>
-        <p>Currently serving: number {{ state.queue_number }}.</p>
-      </section>
-    {% elif state.alert_state == 'next_up' %}
-      <section{% if emphasize %} class="student-alert next-alert"{% endif %} aria-labelledby="student-alert-heading" data-alert-message>
-        <h2 id="student-alert-heading"><span aria-hidden="true">&#8594;</span> You're next</h2>
-        <p>Number {{ state.queue_number }} is Next Up. Wait for the instructor to begin helping you.</p>
-      </section>
-    {% elif state.alert_state == 'advance_warning' and alert_enabled %}
-      <section{% if emphasize %} class="student-alert next-alert"{% endif %} aria-labelledby="student-alert-heading" data-alert-message>
-        <h2 id="student-alert-heading"><span aria-hidden="true">&#8594;</span> Your turn is approaching</h2>
-        <p>You are among the first {{ state.preferences.advance_warning_count }} waiting requests.
-           Wait for the instructor to begin helping you.</p>
-      </section>
-    {% else %}
-      <h2>Waiting for help</h2>
-    {% endif %}
-    {% if state.display_name %}<p>Name: {{ state.display_name }}</p>{% endif %}
-    <p>People ahead: {{ state.people_ahead }}</p>
-    {% if state.status == 'waiting' %}
-      {% if state.estimated_wait_minutes == 0 %}
-        <p>Estimated wait: No one ahead; waiting for the instructor.</p>
-      {% elif state.estimated_wait_minutes is none %}
-        <p>Estimated wait: Not enough completed help history yet.</p>
+  <div data-client-region="session">
+    <p class="client-session">Help session with <strong>{{ state.instructor_name }}</strong></p>
+    {% if error %}{{ alert(error, 'danger') }}{% endif %}
+  </div>
+  <div class="client-grid">
+    <div data-client-region="primary">
+      {% if state.status in ('waiting', 'serving') %}
+        {% include 'queue/_ticket.html' %}
       {% else %}
-        <p>Estimated wait: About {{ state.estimated_wait_minutes }} {{ 'minute' if state.estimated_wait_minutes == 1 else 'minutes' }}.</p>
-        <p>This is approximate and does not include instructor pauses.</p>
+        <section class="client-intro panel" tabindex="-1" data-client-fallback>
+          <span class="client-intro-icon">{{ icon('check' if state.status in ('left', 'completed') else 'ticket') }}</span>
+          {% if state.status == 'ended' %}
+            <h2>Session ended</h2>
+            <p data-client-message>This session no longer accepts requests.</p>
+            {% if state.queue_number %}<p>Your request number was {{ state.queue_number }}.</p>{% endif %}
+          {% elif state.status == 'left' %}
+            <h2>You left the queue</h2>
+            <p data-client-message>You are no longer waiting for help. You can join again if you need a hand.</p>
+            <p>Joining again gives you a new number.</p>
+          {% elif state.status == 'completed' %}
+            <h2>Your request is complete</h2>
+            <p data-client-message>Your help request has been completed. Have another question? You can join again.</p>
+          {% else %}
+            <h2>Need a hand?</h2>
+            <p>Join the queue and keep learning. Your place in line updates here.</p>
+            <span class="client-badge">Session active</span>
+          {% endif %}
+        </section>
       {% endif %}
-    {% endif %}
-    <form method="post" action="{{ url_for('queue.leave', public_code=state.public_code) }}">
-      {{ leave_form.hidden_tag() }}
-      {{ leave_form.submit() }}
-    </form>
-  {% else %}
-    {% if state.status == 'left' %}<h2>You left the queue</h2>{% endif %}
-    {% if state.status == 'completed' %}<h2>Your request is complete</h2>{% endif %}
-    <form method="post" action="{{ url_for('queue.join', public_code=state.public_code) }}">
-      {{ join_form.hidden_tag() }}
-      {{ join_form.display_name.label }}
-      {{ join_form.display_name(maxlength=100, autocomplete='off', aria_describedby='name-help') }}
-      <p id="name-help">You can leave this blank.</p>
-      {% for errors in join_form.errors.values() %}
-        {% for message in errors %}<p role="alert">{{ message }}</p>{% endfor %}
-      {% endfor %}
-      {{ join_form.submit() }}
-    </form>
-  {% endif %}
-  <p><a class="action" href="{{ url_for('queue.client', public_code=state.public_code) }}">Refresh status</a></p>
-  <p><a class="action" href="{{ url_for('queue.exit_view', public_code=state.public_code) }}">Exit</a></p>
-  <p>Exit keeps your request in the queue. Leave Queue removes it.</p>
-  <p>No account is needed. Your place is saved in this browser using cookies.
-     Clearing cookies or changing browsers can lose access to a request.
-     People sharing a browser share its queue request.</p>
+    </div>
+    <div data-client-region="secondary">
+      {% if state.status in ('waiting', 'serving') %}
+        <section class="client-details panel" aria-labelledby="queue-details-heading">
+          <h2 id="queue-details-heading">Your place in line</h2>
+          {% if state.status == 'waiting' %}
+            <p class="client-metric" data-client-message>{{ state.people_ahead }} {{ 'person' if state.people_ahead == 1 else 'people' }} ahead of you</p>
+            <p class="text-muted">Session active · Your request is in the queue.</p>
+            <div class="client-wait">
+              {% if state.estimated_wait_minutes == 0 %}
+                <p>Estimated wait: No one ahead; waiting for the instructor.</p>
+              {% elif state.estimated_wait_minutes is none %}
+                <p>Estimated wait: Not enough completed help history yet.</p>
+              {% else %}
+                <p>Estimated wait: About {{ state.estimated_wait_minutes }} {{ 'minute' if state.estimated_wait_minutes == 1 else 'minutes' }}.</p>
+                <p class="client-note">This is approximate and does not include instructor pauses.</p>
+              {% endif %}
+            </div>
+          {% else %}
+            <p class="client-metric">Your request is being served.</p>
+            <p class="text-muted">The instructor has started helping with your request.</p>
+          {% endif %}
+          <details class="leave-action" data-client-disclosure="leave">
+            <summary data-client-focus="leave-disclosure">Leave the queue</summary>
+            <p class="client-note">This removes your active request. If you rejoin, you’ll receive a new number.</p>
+            <form method="post" action="{{ url_for('queue.leave', public_code=state.public_code) }}" data-client-form="leave">
+              {{ leave_form.hidden_tag() }}
+              <button type="submit" name="{{ leave_form.submit.name }}" value="leave" class="button button--danger" data-client-focus="leave">{{ leave_form.submit.label.text }}</button>
+            </form>
+          </details>
+        </section>
+      {% elif state.status != 'ended' %}
+        <section class="panel" aria-labelledby="join-heading">
+          <h2 id="join-heading">Join the queue</h2>
+          {% include 'queue/_join_form.html' %}
+        </section>
+      {% else %}
+        <section class="panel">
+          <h2>That’s all for this session</h2>
+          <p class="text-muted">For more help, ask your instructor for a new session link or QR code.</p>
+        </section>
+      {% endif %}
+    </div>
+  </div>
 </div>

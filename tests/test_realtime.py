@@ -229,7 +229,7 @@ def test_state_endpoints_are_private_current_and_survive_logout(
     alice_state, bob_state = alice.get(client_url + "/state"), bob.get(client_url + "/state")
     assert "Alice private" in alice_state.text and "Bob private" not in alice_state.text
     assert "Bob private" in bob_state.text and "Alice private" not in bob_state.text
-    assert "People ahead: 1" in bob_state.text
+    assert "1 person ahead of you" in bob_state.text
     for state in (alice_state, bob_state):
         assert state.headers["Cache-Control"] == "no-store"
         assert "instructor/" not in state.text and "<script" not in state.text

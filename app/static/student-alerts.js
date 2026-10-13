@@ -27,8 +27,8 @@
   function soundOff(message = typeof Audio === "function" ? "Sound is off." : "Sound is not supported in this browser. Visual alerts remain.") {
     soundEnabled = false;
     soundButton.setAttribute("aria-pressed", "false");
-    soundButton.textContent = "Enable and test sound";
-    soundStatus.textContent = message;
+    if (soundButton.textContent !== "Enable and test sound") soundButton.textContent = "Enable and test sound";
+    if (soundStatus.textContent !== message) soundStatus.textContent = message;
     try { tone?.stop(); } catch (_) { /* already finished */ }
   }
 
@@ -36,8 +36,8 @@
     const wasEnabled = vibrationEnabled;
     vibrationEnabled = false;
     vibrationButton.setAttribute("aria-pressed", "false");
-    vibrationButton.textContent = "Enable and test vibration";
-    vibrationStatus.textContent = message;
+    if (vibrationButton.textContent !== "Enable and test vibration") vibrationButton.textContent = "Enable and test vibration";
+    if (vibrationStatus.textContent !== message) vibrationStatus.textContent = message;
     if (wasEnabled) {
       try { navigator.vibrate(0); } catch (_) { /* optional capability */ }
     }
@@ -144,7 +144,7 @@
     if (nextEntry !== entryId) { entryId = nextEntry; seen = new Set(); }
     const alert = active ? state.dataset.alertState : "";
     if (!["next_up", "serving", "advance_warning"].includes(alert)) {
-      announcement.textContent = "";
+      if (announcement.textContent) announcement.textContent = "";
       document.title = originalTitle;
       if (!active) { soundOff(); vibrationOff(); }
       return;

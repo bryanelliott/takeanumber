@@ -114,7 +114,9 @@ def test_visual_state_and_optional_controls_are_accessible_without_browser_apis(
     assert "You're next" in page.text and 'aria-labelledby="student-alert-heading"' in page.text
     assert 'aria-live="polite"' in page.text and 'aria-atomic="true"' in page.text
     assert "Enable and test sound" in page.text and "Enable and test vibration" in page.text
-    assert "animation: none" in page.text and "transition: none" in page.text
+    css = browser.get("/static/css/client.css")
+    assert css.status_code == 200
+    assert "animation: none" in css.text and "transition: none" in css.text
     assert "/leave" in page.text and "Exit" in page.text
     exit_page = browser.get(url + "/exit")
     assert "student-alerts.js" not in exit_page.text

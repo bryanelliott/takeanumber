@@ -2,25 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Take A Number — Student help</title>
-  <style>
-    body { font: 1.1rem/1.5 system-ui, sans-serif; max-width: 36rem; margin: auto; padding: 1rem; }
-    button, input, .action { font: inherit; padding: .7rem; margin: .3rem 0; }
-    input[type=text] { box-sizing: border-box; width: 100%; }
-    .action { display: inline-block; }
-    .number { font-size: 2.5rem; font-weight: bold; }
-    .student-alert { border: .25rem solid; padding: 1rem; margin: 1rem 0; animation: none; transition: none; }
-    .next-alert { border-style: dashed; border-color: #715000; background: #fff4cf; color: #342500; }
-    .serving-alert { border-color: #145631; background: #e5f7ed; color: #103b24; }
-    .student-alert h2 { margin-top: 0; font-size: 1.65rem; }
-    .screen-reader-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/client.css') }}">
 </head>
-<body>
-  <main>
-    <h1>Take A Number</h1>
+<body class="client-page">
+  {% from 'ui/components.html' import icon %}
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <header class="client-header">
+    <div class="client-container">
+      <a class="brand" href="{{ url_for('public.landing') }}"><span class="brand-mark">{{ icon('ticket') }}</span>Take A Number</a>
+      <span class="client-header-label">Student help</span>
+    </div>
+  </header>
+  <main id="main-content" class="client-container client-main" tabindex="-1">
+    <h1 class="screen-reader-only">Student help queue</h1>
     {% block content %}{% endblock %}
   </main>
+  <footer class="client-footer client-container">A little more order. More time to learn.</footer>
 </body>
 </html>

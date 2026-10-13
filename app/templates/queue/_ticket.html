@@ -1,0 +1,28 @@
+{# Presentation only. Alert emphasis still follows the instructor's policy. #}
+<section class="client-ticket panel" aria-labelledby="ticket-heading" tabindex="-1" data-client-fallback>
+  <div class="ticket-topline cluster">
+    <h2 id="ticket-heading" class="client-label">Your ticket</h2>
+    <span class="client-badge">{{ 'Being helped' if state.status == 'serving' else 'In the queue' }}</span>
+  </div>
+  <p class="client-ticket-number"><span class="screen-reader-only">Number </span>{{ state.queue_number }}</p>
+  {% if state.display_name %}<p class="client-ticket-name">Name: {{ state.display_name }}</p>{% endif %}
+  {% if state.alert_state == 'serving' %}
+    <section{% if emphasize %} class="student-alert serving-alert"{% endif %} aria-labelledby="student-alert-heading" data-alert-message>
+      <h3 id="student-alert-heading"><span aria-hidden="true">&#10003;</span> It's your turn</h3>
+      <p>Currently serving: number {{ state.queue_number }}.</p>
+    </section>
+  {% elif state.alert_state == 'next_up' %}
+    <section{% if emphasize %} class="student-alert next-alert"{% endif %} aria-labelledby="student-alert-heading" data-alert-message>
+      <h3 id="student-alert-heading"><span aria-hidden="true">&#8594;</span> You're next</h3>
+      <p>Number {{ state.queue_number }} is Next Up. Wait for the instructor to begin helping you.</p>
+    </section>
+  {% elif state.alert_state == 'advance_warning' and alert_enabled %}
+    <section{% if emphasize %} class="student-alert next-alert"{% endif %} aria-labelledby="student-alert-heading" data-alert-message>
+      <h3 id="student-alert-heading"><span aria-hidden="true">&#8594;</span> Your turn is approaching</h3>
+      <p>You are among the first {{ state.preferences.advance_warning_count }} waiting requests. Wait for the instructor to begin helping you.</p>
+    </section>
+  {% else %}
+    <h3>Waiting for help</h3>
+    <p class="text-muted">Keep this page open to see your place in line.</p>
+  {% endif %}
+</section>

@@ -1,0 +1,16 @@
+<form method="post" action="{{ url_for('queue.join', public_code=state.public_code) }}" class="client-join-form" data-client-form="join">
+  {{ join_form.hidden_tag() }}
+  <div class="form-field">
+    {{ join_form.display_name.label }}
+    {{ join_form.display_name(maxlength=100, autocomplete='off', aria_describedby='name-help name-errors', aria_invalid='true' if join_form.display_name.errors else 'false') }}
+    <p id="name-help" class="field-help">You can leave this blank. Use up to 100 characters.</p>
+    <div id="name-errors" class="field-errors">
+      {% for message in join_form.display_name.errors %}<p role="alert">{{ message }}</p>{% endfor %}
+    </div>
+  </div>
+  {% for field_name, errors in join_form.errors.items() if field_name != 'display_name' %}
+    {% for message in errors %}<p class="field-errors" role="alert">{{ message }}</p>{% endfor %}
+  {% endfor %}
+  <button type="submit" name="{{ join_form.submit.name }}" value="join" class="button client-primary" data-client-focus="join">Join the Queue</button>
+  <p class="field-help">No account needed. Your place is saved in this browser.</p>
+</form>

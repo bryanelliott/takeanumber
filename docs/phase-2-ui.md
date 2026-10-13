@@ -13,9 +13,8 @@ neutral surfaces, legible system typography, subtle borders and shadows. Text si
 above the landscape, with the entire image visible at every size. The shared shell
 lightly improves instructor and authentication pages. The Master View retains its
 two-column queue/QR layout in these initial milestones; Milestone 2.3 below replaces
-that layout. Its CSS lives in `master.css`. The independent student `queue/base.html`, queue layouts,
-alert emphasis, and real-time scripts are unchanged; their dedicated redesign is
-future work.
+that layout. Its CSS lives in `master.css`. Milestone 2.4 below brings the independent
+student shell and queue layouts onto the same design foundation.
 
 ## Files and components
 
@@ -313,3 +312,132 @@ fixed-height layout. No physical projector, mobile camera, Safari/iOS or screen-
 device audit was performed. Deploy changed templates, CSS and JavaScript together
 through the existing workflow. There are **no new dependencies, configuration
 changes, or database migrations**.
+
+## Milestone 2.4 — Client View
+
+### Layout and reusable components
+
+The anonymous student document still extends `queue/base.html`, with a compact
+branding header, skip link and footer. It now imports `design-system.css` and
+`css/client.css`; it does not inherit instructor navigation. The existing `/session/<code>`
+route and Master QR destination are unchanged.
+
+`queue/_client_state.html` arranges three update regions: session context, the
+primary ticket/introduction, and secondary details/form. `queue/_ticket.html`
+renders the existing ticket number, optional name and preference-aware alert.
+`queue/_join_form.html` renders the optional name, associated help/errors and
+CSRF-protected join form. Reuse these partials when extending student states.
+Do not put queue calculations or identity handling in templates.
+
+The layout uses one column below 48rem (768px at the default font size), then two
+columns inside a centered 66rem container. Ticket information comes first in DOM
+order. Mobile introductory decoration is omitted to keep the Join action near the
+top. Shared panels, button variants, icon/alert macros, typography, status colours,
+spacing, corners and focus tokens provide the foundation. Client-specific ticket,
+metric, disclosure and layout rules live only in `client.css`; other views are
+not restyled. Ticket typography uses `clamp()`, long names/numbers wrap, and
+controls allow wrapping with a minimum 48px touch height. Safe-area insets are
+respected without disabling browser zoom.
+
+### Supported states and actions
+
+- **Not joined:** “Need a hand?”, session availability, optional name (100-character
+  maximum), and Join the Queue. No account, location or additional field is added.
+- **Waiting:** prominent ticket, people ahead and the existing estimated-wait
+  explanation. Next Up means first waiting request; a student can still have the
+  currently served request ahead of them. It does not promise immediate service.
+- **Serving:** “It's your turn”, Being helped, and the student's own ticket.
+- **Completed / left:** distinct confirmation with an explicit opportunity to
+  join again. No automatic rejoin occurs.
+- **Ended:** joining/leaving controls disappear; the previous ticket remains
+  visible where supplied by the backend, with guidance to obtain a new session link.
+
+The backend supplies no other student's Currently Serving ticket/name, queue title,
+help description or paused state, so this view does not invent them. Leave Queue
+is inside a native disclosure with an explanation and a destructive POST button;
+opening the disclosure changes no queue state. Exit remains read-only. Refresh,
+Exit, optional sound/vibration controls and privacy guidance sit outside the live
+fragment, so updates retain their state. Existing instructor alert preferences
+still control emphasis, announcements, sound and vibration.
+
+### Updates, validation and identity
+
+`client-view.js` enhances ordinary POST forms with Joining/Leaving feedback and a
+pending-submission guard. It resets on page restoration or after a stalled navigation
+(10 seconds); it never retries a mutation automatically. Backend duplicate-join
+protection and validation remain authoritative. Form buttons use wrapping text;
+hidden CSRF, browser-binding and entry fields are preserved.
+
+The shared updater offers a cancelable `queue:render` event only for client views.
+The client script compares regions for the same status/ticket, retaining unchanged
+DOM and refreshing CSRF in place. Changed regions preserve name drafts, invalid-form
+feedback (while browser binding matches), open leave disclosures and appropriate
+keyboard focus. Status/ticket transitions use the normal complete fragment update.
+Focus moves to a readable panel if its control disappears. Master rendering retains
+its existing path. No new polling loop, socket connection, storage or API is added.
+
+Existing serialized Socket.IO invalidation reads and 30-second fallback polling
+remain in use. Temporary errors retain the displayed state with an update warning;
+lost browser access clears it and stops updates. The new polite live region only
+announces changed ordinary position/completion/departure/end messages. Next Up,
+Serving and advance warnings remain with the existing preference-aware alert
+script. Unchanged polling does not repeat those announcements. No motion is added.
+`student-alerts.js` also avoids rewriting identical disabled-alert messages in its
+status regions; sound/vibration behavior and instructor preferences are unchanged.
+
+The existing signed, HttpOnly browser cookie and server identity mapping are
+unchanged. Refresh ordinarily restores the request; clearing/expiring cookies,
+changing browsers or blocking cookies can lose access to an existing request.
+Shared browsers share a queue identity. The redesign adds no fingerprinting or
+personal-data storage. Sound/vibration still require opt-in and browser support;
+sleeping/background browsers can miss timely alerts. There is no new push service.
+
+### Validation and manual review
+
+Run `ruff check .` and the existing SQL Server pytest suite. The dedicated Docker
+test database is disposable: after restarting its container, run
+`docker compose run --rm test-runner python scripts/init_test_database.py` before
+`docker compose run --rm test-runner python -m pytest`. Never use a development
+or production database. The optional host command
+`python -m pytest tests/test_live_browser.py -q` uses installed Chrome/Edge.
+
+Client tests cover anonymous rendering, lifecycle presentations, static assets,
+accessible validation and preserved input. Existing join/duplicate/leave/refresh,
+authorization, QR, Master, alert and deployment tests remain regression coverage.
+`browser_client_view.html` checks selective rendering, token refresh, draft/focus
+preservation, retained errors/disclosures, pending submissions, announcements,
+temporary error recovery, completion/end and lost-identity clearing.
+
+Milestone 2.4 validation: Ruff passed; the full dedicated SQL Server suite passed
+369 tests and skipped eight optional browser cases in the browserless container.
+All eight browser cases passed separately in installed host Chrome. After Docker
+restarted during verification, its disposable database was reinitialized with the
+existing script before repeating the successful full run.
+
+Chrome rendered the actual Flask templates with synthetic snapshots at 320, 375,
+390, 430, 600, 768, 1024, 1280, 1440 and 1920px for seven state presentations
+(70 combinations). Checks included horizontal overflow, 48px controls, long names,
+large ticket numbers, 200% text scaling, server validation and Exit. This used a
+stubbed socket and synthetic state, not a browser-to-SQL end-to-end session.
+
+Manual staging checks:
+
+1. Scan the Master QR on physical phones, including Safari/iOS and Android Chrome.
+   Try 320–430px, 600–1024px and desktop widths, portrait/landscape, and real browser
+   zoom at 200%. Check the software keyboard, pinch zoom and safe areas.
+2. Join with a blank name, then with a name. Double-tap Join; refresh and reopen
+   the browser. Confirm the same active ticket remains. Test invalid name input.
+3. Use two student browsers and a Master: join, leave, Serve next, Done and End
+   session. Check counts, Next Up versus Serving, completion and explicit rejoin.
+4. Open Leave Queue with keyboard/touch and verify the final button is deliberate.
+   Exit and return; confirm it did not cancel the request. Disable JavaScript and
+   confirm normal forms and manual Refresh remain usable.
+5. Disconnect/reconnect the network. Verify the update warning and recovery.
+   With a screen reader, check meaningful announcements and quiet unchanged polls.
+   Test optional alerts and instructor-disabled alerts on supported real devices.
+
+Physical devices, screen readers and native browser zoom need manual review;
+headless viewport/text-scaling checks cannot establish those behaviors. Deploy
+templates and static files together through the existing Azure workflow. There
+are **no new dependencies, configuration changes or database migrations**. SQL
+Server/Azure SQL, queue services, authentication and anonymous identity are unchanged.

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Client View browser checks</title>
+<link rel="stylesheet" href="../app/static/css/design-system.css">
+<link rel="stylesheet" href="../app/static/css/client.css">
+<body class="client-page">
+<main class="client-container">
+  <div id="live-state" tabindex="-1"></div>
+  <p id="client-announcement" role="status" aria-live="polite"></p>
+  <p id="live-status" role="status"></p>
+  <details id="options"><summary>Optional alerts</summary></details>
+  <div id="live-config" data-view="client" data-state-url="/test-state" data-csrf-token="initial"></div>
+</main>
+<script>
+  const target = document.getElementById('live-state');
+  const state = (status = 'not_joined', ahead = 3, csrf = 'fresh', invalid = false) => {
+    const active = ['waiting', 'serving'].includes(status);
+    const hidden = `<input type="hidden" name="csrf_token" value="${csrf}"><input type="hidden" name="browser_binding" value="same-binding">`;
+    return `<div data-live-csrf="${csrf}" data-client-status="${status}" data-entry-id="${active ? 'entry-one' : ''}" data-alert-state="${status === 'serving' ? 'serving' : ''}">
+      <div data-client-region="session">Help with Instructor</div><div class="client-grid">
+      <div data-client-region="primary"><section class="panel" tabindex="-1" data-client-fallback><h2>${status}</h2>${active ? '<p class="client-ticket-number">24</p>' : ''}</section></div>
+      <div data-client-region="secondary"><section class="panel">
+      ${active ? `<p data-client-message>${ahead} people ahead of you</p><details data-client-disclosure="leave"><summary data-client-focus="leave-disclosure">Leave the queue</summary><form data-client-form="leave">${hidden}<input type="hidden" name="entry_id" value="entry-one"><button type="submit" data-client-focus="leave">Leave Queue</button></form></details>`
+      : status === 'ended' ? '<p data-client-message>Session ended.</p>'
+      : `<p data-client-message>${status === 'completed' ? 'Your request is complete.' : 'Need a hand?'}</p><form data-client-form="join">${hidden}<label for="display_name">Name (optional)</label><input name="display_name" id="display_name" maxlength="100" aria-invalid="${invalid}">${invalid ? '<p role="alert">Too long</p>' : ''}<button type="submit" data-client-focus="join">Join the Queue</button></form>`}
+      </section></div></div></div>`;
+  };
+  target.innerHTML = state();
+  const handlers = {}, requests = [];
+  let periodic;
+  window.setInterval = callback => { periodic = callback; return 1; };
+  const socket = {connected: true, active: true, on(name, callback) { handlers[name] = callback; }, connect() {}, disconnect() { this.connected = false; }};
+  window.io = () => socket;
+  window.fetch = (url, options) => new Promise(resolve => requests.push({url, options, resolve}));
+</script>
+<script src="../app/static/client-view.js"></script>
+<script src="../app/static/live-updates.js"></script>
+<script>
+  window.addEventListener('load', async () => {
+    const assert = (value, message) => { if (!value) throw new Error(message); };
+    const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+    const respond = async (html, extra = {}) => {
+      const request = requests.shift();
+      assert(request.url === '/test-state' && !request.options.method, 'Updates only read authoritative state');
+      request.resolve({ok: true, status: 200, redirected: false, text: async () => html, ...extra});
+      await tick();
+    };
+    try {
+      const name = document.getElementById('display_name');
+      name.value = 'Draft name'; name.focus(); name.setSelectionRange(2, 5);
+      handlers.queue_changed(); await respond(state('not_joined', 3, 'rotated'));
+      assert(document.getElementById('display_name') === name, 'Unchanged join input is retained');
+      assert(name.value === 'Draft name' && document.activeElement === name && name.selectionStart === 2, 'Keep draft and selection');
+      assert(document.querySelector('[name="csrf_token"]').value === 'rotated', 'Refresh token without replacing input');
+      target.innerHTML = state('not_joined', 3, 'rotated', true);
+      document.getElementById('display_name').value = 'Invalid draft';
+      handlers.queue_changed(); await respond(state());
+      assert(target.textContent.includes('Too long') && document.querySelector('[aria-invalid="true"]').value === 'Invalid draft', 'Background GET preserves validation feedback');
+      let submissions = 0;
+      document.addEventListener('submit', event => { if (!event.defaultPrevented) submissions++; event.preventDefault(); });
+      const form = target.querySelector('form');
+      form.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
+      form.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
+      assert(submissions === 1 && form.querySelector('[type="submit"]').textContent === 'Joining…', 'Only one pending submission');
+      assert(!form.elements.display_name.disabled && !form.elements.csrf_token.disabled, 'Name and CSRF remain submitted');
+      window.dispatchEvent(new PageTransitionEvent('pageshow'));
+      assert(!form.querySelector('[type="submit"]').disabled, 'Navigation restore clears submission guard');
+      handlers.queue_changed(); await respond(state('waiting'));
+      const ticket = target.querySelector('[data-client-region="primary"]');
+      const announcement = document.getElementById('client-announcement');
+      let announcements = 0;
+      new MutationObserver(() => announcements++).observe(announcement, {childList: true});
+      const leave = target.querySelector('details'); leave.open = true;
+      leave.querySelector('summary').focus();
+      document.getElementById('options').open = true;
+      periodic(); await respond(state('waiting', 3, 'new-token'));
+      assert(target.querySelector('details') === leave && leave.open, 'Unchanged leave disclosure remains intact');
+      assert(announcements === 0, 'Identical polling does not announce again');
+      handlers.queue_changed(); await respond(state('waiting', 2));
+      assert(target.querySelector('[data-client-region="primary"]') === ticket, 'Position change retains ticket panel');
+      assert(target.querySelector('details').open && document.activeElement.dataset.clientFocus === 'leave-disclosure', 'Changed details preserve disclosure and keyboard focus');
+      assert(announcements === 1 && announcement.textContent === '2 people ahead of you', 'Announce changed position once');
+      handlers.queue_changed(); await respond('', {ok: false, status: 500});
+      assert(target.contains(ticket) && document.getElementById('live-status').textContent.includes('unavailable'), 'Temporary error retains state with warning');
+      periodic(); await respond(state('serving'));
+      assert(document.activeElement.dataset.clientFocus === 'leave-disclosure' && target.querySelector('details').open, 'Same ticket preserves focused disclosure when serving starts');
+      assert(announcements === 2 && announcement.textContent === '', 'Clear old position; Serving announcement belongs to existing preference-aware alerts');
+      handlers.queue_changed(); await respond(state('completed'));
+      assert(document.activeElement.hasAttribute('data-client-fallback'), 'Completion moves focus off removed leave action');
+      assert(target.querySelector('[data-client-form="join"]') && submissions === 1, 'Completion offers explicit rejoin without submitting');
+      assert(announcement.textContent.includes('complete'), 'Completion announced');
+      handlers.queue_changed(); await respond(state('ended'));
+      assert(!target.querySelector('form') && announcement.textContent.includes('ended'), 'Ended session removes mutations');
+      assert(document.getElementById('options').open, 'Static controls survive all updates');
+      handlers.queue_changed(); await respond('', {status: 409});
+      assert(!target.querySelector('[data-client-status]') && !socket.connected, 'Lost identity clears private state and stops updates');
+      assert(document.documentElement.scrollWidth <= innerWidth, 'No horizontal overflow');
+      document.body.dataset.result = 'passed';
+    } catch (error) {
+      document.body.dataset.result = 'failed';
+      document.body.append(String(error));
+    }
+  });
+</script>
+</body>
+</html>

@@ -5,7 +5,7 @@ import pytest
 from app.extensions import db
 from app.models import QueueEntry, StudentIdentity
 from app.queue import browser
-from app.services import sessions, student_identity
+from app.services import queue, sessions, student_identity
 
 
 def test_public_join_refresh_leave_and_rejoin(app, client, queue_session, hidden_fields):
@@ -16,7 +16,7 @@ def test_public_join_refresh_leave_and_rejoin(app, client, queue_session, hidden
     fields = hidden_fields(page)
     assert client.post(path + "/join", data=fields).status_code == 303
     active = client.get(path)
-    assert 'data-client-status="waiting"' in active.text and "People ahead: 0" in active.text
+    assert 'data-client-status="waiting"' in active.text and "0 people ahead of you" in active.text
     assert client.post(path + "/join", data=fields).status_code == 303
     refreshed = client.get(path)
     assert hidden_fields(active)["entry_id"] == hidden_fields(refreshed)["entry_id"]
@@ -36,6 +36,43 @@ def test_public_join_refresh_leave_and_rejoin(app, client, queue_session, hidden
             (1, "left"),
             (2, "waiting"),
         ]
+
+
+def test_client_design_tracks_ticket_lifecycle(app, client, queue_session, hidden_fields):
+    path = f"/session/{queue_session[1]}"
+    initial = client.get(path)
+    assert initial.status_code == 200 and "Need a hand?" in initial.text
+    assert 'data-client-focus="join">Join the Queue</button>' in initial.text
+    assert '<label for="display_name">Name (optional)</label>' in initial.text
+    assert 'id="main-content"' in initial.text and 'class="skip-link"' in initial.text
+    assert '/auth/login' not in initial.text and '/auth/signup' not in initial.text
+    for asset in ("css/design-system.css", "css/client.css", "client-view.js"):
+        assert f'/static/{asset}' in initial.text
+        assert client.get(f'/static/{asset}').status_code == 200
+    client.post(path + "/join", data={**hidden_fields(initial), "display_name": "Alex"})
+    waiting = client.get(path)
+    assert 'class="client-ticket-number"' in waiting.text and "Name: Alex" in waiting.text
+    assert "You're next" in waiting.text and "Wait for the instructor" in waiting.text
+    assert 'data-client-disclosure="leave"' in waiting.text
+    assert 'data-client-form="join"' not in waiting.text
+    with app.app_context():
+        entry_id = db.session.scalar(db.select(QueueEntry.id))
+        queue.begin_serving(*queue_session, entry_id)
+    serving = client.get(path + "/state")
+    assert "It's your turn" in serving.text and "Being helped" in serving.text
+    assert "Estimated wait:" not in serving.text
+    with app.app_context():
+        queue.complete_current(*queue_session, entry_id)
+    completed = client.get(path + "/state")
+    assert "Your request is complete" in completed.text
+    assert 'data-client-form="join"' in completed.text
+    assert 'data-client-form="leave"' not in completed.text
+    with app.app_context():
+        assert db.session.scalar(db.select(db.func.count()).select_from(QueueEntry)) == 1
+        sessions.end_session(*queue_session)
+    ended = client.get(path + "/state")
+    assert "Your request number was 1" in ended.text
+    assert "<form" not in ended.text
 
 
 def test_exit_is_read_only_and_return_restores_request(app, client, queue_session, hidden_fields):
@@ -231,7 +268,7 @@ def test_no_other_browser_data_or_identity_override(app, client, queue_session, 
         },
     )
     assert "Private Name" not in other.get(path).text
-    assert "People ahead: 1" in other.get(path).text
+    assert "1 person ahead of you" in other.get(path).text
     stolen_target = {**hidden_fields(other.get(path)), "entry_id": first_fields["entry_id"]}
     assert other.post(path + "/leave", data=stolen_target).status_code == 404
     assert 'data-client-status="waiting"' in client.get(path).text
@@ -240,9 +277,11 @@ def test_no_other_browser_data_or_identity_override(app, client, queue_session, 
 def test_optional_name_validation_and_escaping(client, queue_session, hidden_fields):
     path = f"/session/{queue_session[1]}"
     fields = hidden_fields(client.get(path))
-    assert (
-        client.post(path + "/join", data={**fields, "display_name": "x" * 101}).status_code == 400
-    )
+    invalid = client.post(path + "/join", data={**fields, "display_name": "x" * 101})
+    assert invalid.status_code == 400
+    assert 'aria-invalid="true"' in invalid.text and 'role="alert"' in invalid.text
+    assert f'value="{"x" * 101}"' in invalid.text
+    assert 'aria-describedby="name-help name-errors"' in invalid.text
     name = "<script>alert(1)</script>"
     assert client.post(path + "/join", data={**fields, "display_name": name}).status_code == 303
     response = client.get(path)
@@ -299,7 +338,7 @@ def test_ended_session_has_no_join_or_leave_controls(app, client, queue_session,
     assert client.post(path + "/leave", data=leave_fields).status_code == 409
     response = client.get(path)
     assert "Session ended" in response.text
-    assert "<form" not in response.text and "People ahead:" not in response.text
+    assert "<form" not in response.text and "ahead of you" not in response.text
     assert "Estimated wait:" not in response.text
 
 
