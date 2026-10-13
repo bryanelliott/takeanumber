@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block body_class %}instructor-page{% endblock %}
+{% block main_class %}container instructor-container page-content{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/instructor.css') }}">
+  <script defer src="{{ url_for('static', filename='instructor-forms.js') }}"></script>
+{% endblock %}

@@ -1,13 +1,15 @@
-{% extends 'base.html' %}
-{% from 'auth/_fields.html' import field %}
+{% extends 'auth/base.html' %}
+{% from 'ui/components.html' import field, form_feedback %}
 {% block title %}Instructor login — Take A Number{% endblock %}
-{% block main_class %}container container--form page-content{% endblock %}
-{% block content %}
-  <h1>Instructor login</h1>
-  <form method="post" class="panel">
+{% block auth_content %}
+  <h1 id="auth-heading">Welcome back</h1>
+  <p class="text-muted">Sign in to manage your classroom queue.</p>
+  <form method="post" class="auth-form" data-submit-feedback="Signing in…">
     {{ form.hidden_tag() }}
+    {{ form_feedback(form) }}
     {{ field(form.email, 'username') }}
-    {{ field(form.password, 'current-password') }}
-    {{ form.submit() }}
+    {{ field(form.password, 'current-password', password_toggle=true) }}
+    <button type="submit" class="button form-primary">{{ form.submit.label.text }}</button>
   </form>
+  <p class="auth-alternative">New to Take A Number? <a href="{{ url_for('auth.signup') }}">Create an instructor account</a></p>
 {% endblock %}

@@ -1,5 +1,8 @@
-{% extends 'base.html' %}
-{% block content %}
-  <h1>Please try again later</h1>
-  <p>Too many sign-up or login attempts. Wait a few minutes before trying again.</p>
+{% extends 'auth/base.html' %}
+{% from 'ui/components.html' import alert %}
+{% block title %}Please try again later — Take A Number{% endblock %}
+{% block auth_content %}
+  <h1 id="auth-heading">Please try again later</h1>
+  {{ alert('Too many sign-up or login attempts. Wait a few minutes before trying again.', 'warning') }}
+  <p class="auth-alternative"><a href="{{ url_for('auth.login') }}">Return to login</a></p>
 {% endblock %}

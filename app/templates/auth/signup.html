@@ -1,17 +1,17 @@
-{% extends 'base.html' %}
-{% from 'auth/_fields.html' import field %}
+{% extends 'auth/base.html' %}
+{% from 'ui/components.html' import field, form_feedback %}
 {% block title %}Instructor sign-up — Take A Number{% endblock %}
-{% block main_class %}container container--form page-content{% endblock %}
-{% block content %}
-  <h1>Create an instructor account</h1>
-  <p>Students do not need accounts.</p>
-  <p>Use a password of 15–128 characters. Spaces are allowed.</p>
-  <form method="post" class="panel">
+{% block auth_content %}
+  <h1 id="auth-heading">Create your instructor account</h1>
+  <p class="text-muted">A simple way to manage student help requests. Students do not need accounts.</p>
+  <form method="post" class="auth-form" data-submit-feedback="Creating account…">
     {{ form.hidden_tag() }}
+    {{ form_feedback(form) }}
     {{ field(form.display_name, 'name') }}
     {{ field(form.email, 'username') }}
-    {{ field(form.password, 'new-password') }}
-    {{ field(form.confirm_password, 'new-password') }}
-    {{ form.submit() }}
+    {{ field(form.password, 'new-password', 'Use 15–128 characters. Spaces are allowed.', password_toggle=true) }}
+    {{ field(form.confirm_password, 'new-password', password_toggle=true) }}
+    <button type="submit" class="button form-primary">{{ form.submit.label.text }}</button>
   </form>
+  <p class="auth-alternative">Already have an account? <a href="{{ url_for('auth.login') }}">Log in</a></p>
 {% endblock %}

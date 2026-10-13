@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Instructor form enhancements</title>
+<link rel="stylesheet" href="../app/static/css/design-system.css">
+<link rel="stylesheet" href="../app/static/css/instructor.css">
+<body class="instructor-page">
+<main class="container container--form">
+  <form data-submit-feedback="Signing in…">
+    <input type="hidden" name="csrf_token" value="test-token">
+    <label for="email">Email</label><input type="email" id="email" name="email" required autocomplete="username">
+    <label for="password">Password</label>
+    <div class="password-control"><input type="password" id="password" name="password" required autocomplete="current-password"><button type="button" class="button button--secondary password-toggle" data-password-toggle="password" aria-controls="password" aria-label="Show password" hidden>Show</button></div>
+    <button type="submit">Log in <span aria-hidden="true">→</span></button>
+  </form>
+</main>
+<script src="../app/static/instructor-forms.js"></script>
+<script>
+  window.addEventListener('load', () => {
+    const assert = (condition, message) => { if (!condition) throw new Error(message); };
+    try {
+      const form = document.querySelector('form');
+      const password = document.getElementById('password');
+      const toggle = document.querySelector('[data-password-toggle]');
+      const submit = form.querySelector('[type="submit"]');
+      const label = submit.innerHTML;
+      let submissions = 0;
+      document.addEventListener('submit', event => { if (!event.defaultPrevented) submissions++; event.preventDefault(); });
+      assert(!toggle.hidden && password.type === 'password', 'Progressive enhancement starts concealed');
+      form.requestSubmit();
+      assert(submissions === 0 && !submit.disabled, 'Native required validation precedes loading feedback');
+      password.value = 'a temporary test passphrase';
+      toggle.focus(); toggle.click();
+      assert(password.type === 'text' && toggle.textContent === 'Hide' && document.activeElement === toggle, 'Keyboard focus remains on visibility toggle');
+      assert(toggle.getAttribute('aria-label') === 'Hide password', 'Accessible action describes visibility');
+      assert(submissions === 0 && password.value === 'a temporary test passphrase', 'Toggling neither submits nor changes password');
+      toggle.click();
+      assert(password.type === 'password' && toggle.getAttribute('aria-label') === 'Show password', 'Password can be concealed');
+      document.getElementById('email').value = 'teacher@example.edu';
+      toggle.click();
+      form.requestSubmit(); form.requestSubmit();
+      assert(submissions === 1 && submit.disabled && submit.textContent === 'Signing in…', 'Guard duplicate submits and provide pending feedback');
+      assert(password.type === 'password' && form.getAttribute('aria-busy') === 'true', 'Conceal password during submission');
+      const data = new FormData(form);
+      assert(data.get('password') === 'a temporary test passphrase' && data.get('csrf_token') === 'test-token', 'Credential and CSRF fields remain available to native POST');
+      window.dispatchEvent(new PageTransitionEvent('pageshow'));
+      assert(!submit.disabled && submit.innerHTML === label && !form.hasAttribute('aria-busy'), 'Restore controls and original icon after navigation');
+      toggle.click(); window.dispatchEvent(new PageTransitionEvent('pagehide'));
+      assert(password.type === 'password', 'Leaving conceals a revealed password');
+      document.documentElement.style.fontSize = '200%';
+      assert(document.documentElement.scrollWidth <= innerWidth, 'Enlarged text does not overflow');
+      document.body.dataset.result = 'passed';
+    } catch (error) { document.body.dataset.result = 'failed'; document.body.append(String(error)); }
+  });
+</script>
+</body>
+</html>

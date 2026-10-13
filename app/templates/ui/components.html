@@ -26,12 +26,40 @@
   </div>
 {%- endmacro %}
 
-{% macro field(input, autocomplete) -%}
+{% macro field(input, autocomplete='off', help_text='', password_toggle=false) -%}
   <div class="form-field">
-    {{ input.label }}
-    {{ input(autocomplete=autocomplete, aria_describedby=input.id ~ '-errors', aria_invalid='true' if input.errors else 'false') }}
+    <div class="field-label">{{ input.label }}{% if input.flags.required %}<span class="field-required">Required</span>{% endif %}</div>
+    <div{% if password_toggle %} class="password-control"{% endif %}>
+      {{ input(autocomplete=autocomplete, aria_describedby=input.id ~ '-errors' ~ (' ' ~ input.id ~ '-help' if help_text else ''), aria_invalid='true' if input.errors else 'false') }}
+      {% if password_toggle %}
+        <button type="button" class="button button--secondary password-toggle" data-password-toggle="{{ input.id }}" aria-controls="{{ input.id }}" aria-label="Show {{ input.label.text|lower }}" hidden>Show</button>
+      {% endif %}
+    </div>
+    {% if help_text %}<p id="{{ input.id }}-help" class="control-help">{{ help_text }}</p>{% endif %}
     <div id="{{ input.id }}-errors" class="field-errors">
       {% for error in input.errors %}<p role="alert">{{ error }}</p>{% endfor %}
     </div>
   </div>
+{%- endmacro %}
+
+{% macro choice(input, help_text) -%}
+  <div class="form-choice">
+    <label class="choice-label" for="{{ input.id }}">
+      {{ input(aria_labelledby=input.id ~ '-label', aria_describedby=input.id ~ '-help ' ~ input.id ~ '-errors', aria_invalid='true' if input.errors else 'false') }}
+      <span>
+        <span id="{{ input.id }}-label" class="choice-title">{{ input.label.text }}</span>
+        <span id="{{ input.id }}-help" class="control-help">{{ help_text }}</span>
+      </span>
+    </label>
+    <div id="{{ input.id }}-errors" class="field-errors">
+      {% for error in input.errors %}<p role="alert">{{ error }}</p>{% endfor %}
+    </div>
+  </div>
+{%- endmacro %}
+
+{% macro form_feedback(form) -%}
+  {% if form.errors %}
+    {{ alert('Please check the highlighted fields and try again.', 'danger') }}
+    {% for error in form.csrf_token.errors %}<p class="field-errors" role="alert">{{ error }}</p>{% endfor %}
+  {% endif %}
 {%- endmacro %}

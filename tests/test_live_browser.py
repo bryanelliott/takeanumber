@@ -16,6 +16,7 @@ pytestmark = pytest.mark.browser
     [
         "browser_live_updates.html",
         "browser_client_view.html",
+        "browser_instructor_forms.html",
         "browser_master_view.html",
         "browser_master_view.html#storage-blocked",
         "browser_master_view.html#auth-loss",

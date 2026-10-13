@@ -1,25 +1,38 @@
-{% extends 'base.html' %}
+{% extends 'instructor/base.html' %}
+{% from 'ui/components.html' import choice, field, form_feedback %}
 {% block title %}Instructor settings — Take A Number{% endblock %}
 {% block content %}
-  <h1>Student alert settings</h1>
-  <p>These preferences apply to your current and future sessions. Queue status and
-     controls always remain visible, even when alerts are off.</p>
-  <p>Sound and vibration still require each student to enable them on their page.
-     Your settings never override browser restrictions or student choices.</p>
-  <form method="post">
+  <header class="workspace-heading">
+    <p class="workspace-eyebrow">Instructor preferences</p>
+    <h1>Student alert settings</h1>
+    <p class="text-muted reading-width">Choose when students receive alerts and how they appear.
+      These preferences apply to your current and future sessions.</p>
+  </header>
+  <form method="post" class="settings-form" data-submit-feedback="Saving settings…">
     {{ form.hidden_tag() }}
-    {% for field in [form.alert_next_enabled, form.alert_serving_enabled,
-                     form.visual_alert_enabled, form.sound_alert_enabled, form.vibration_enabled] %}
-      <p>{{ field() }} {{ field.label }}</p>
-    {% endfor %}
-    <p>{{ form.advance_warning_count.label }} {{ form.advance_warning_count(aria_describedby='warning-help') }}</p>
-    <p id="warning-help">Warn the first 1–3 waiting requests. Only the first is Next Up;
-       others see “Your turn is approaching.” Currently Serving is excluded from this count.
-       Leaving or completed requests do not count. This applies when Next Up alerts are enabled.</p>
-    {% for errors in form.errors.values() %}
-      {% for error in errors %}<p role="alert">{{ error }}</p>{% endfor %}
-    {% endfor %}
-    {{ form.submit() }}
+    {{ form_feedback(form) }}
+    <div class="settings-grid">
+      <section class="panel settings-group" aria-labelledby="timing-heading">
+        <h2 id="timing-heading">When to alert</h2>
+        <p class="text-muted">Let students know their turn is approaching or has started.</p>
+        {{ choice(form.alert_next_enabled, 'Notify the next waiting request and, if selected below, other requests approaching the front.') }}
+        {{ choice(form.alert_serving_enabled, 'Notify a student when the instructor starts serving their request.') }}
+        {{ field(form.advance_warning_count, help_text='Warn the first 1–3 waiting requests. Only the first is Next Up; others see “Your turn is approaching.” Currently Serving is excluded from this count. Leaving or completed requests do not count. This applies when Next Up alerts are enabled.') }}
+      </section>
+      <section class="panel settings-group" aria-labelledby="methods-heading">
+        <h2 id="methods-heading">How alerts appear</h2>
+        <p class="text-muted">Queue status and controls always remain visible, even when alerts are off.</p>
+        {{ choice(form.visual_alert_enabled, 'Emphasize alert panels, update the browser tab title and announce alerts to screen readers. No flashing or motion.') }}
+        {{ choice(form.sound_alert_enabled, 'Students can enable and test sound on their own queue page.') }}
+        {{ choice(form.vibration_enabled, 'Students can enable and test vibration when their browser and device support it.') }}
+        <p class="control-help">Sound and vibration still require each student to enable them on their page.
+          Your settings never override browser restrictions or student choices. Web Push is not available yet.</p>
+      </section>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="button">{{ form.submit.label.text }}</button>
+      <a class="button button--secondary" href="{{ url_for('instructor.dashboard') }}">Back to dashboard</a>
+      <p class="control-help">Changes take effect when you save. Open your active Master View from the dashboard.</p>
+    </div>
   </form>
-  <p>Web Push is not available yet.</p>
 {% endblock %}

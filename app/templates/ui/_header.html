@@ -6,14 +6,14 @@
     </a>
     <nav class="site-nav" aria-label="Main navigation">
       {% if current_user.is_authenticated %}
-        <a href="{{ url_for('instructor.dashboard') }}">Dashboard</a>
-        <a href="{{ url_for('instructor.preferences') }}">Settings</a>
+        <a href="{{ url_for('instructor.dashboard') }}"{% if request.endpoint == 'instructor.dashboard' %} aria-current="page"{% endif %}>Dashboard</a>
+        <a href="{{ url_for('instructor.preferences') }}"{% if request.endpoint == 'instructor.preferences' %} aria-current="page"{% endif %}>Settings</a>
         <form action="{{ url_for('auth.logout') }}" method="post">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="button button--secondary" type="submit">Log out</button>
         </form>
       {% else %}
-        <a href="{{ url_for('auth.login') }}">Log In</a>
+        <a href="{{ url_for('auth.login') }}"{% if request.endpoint == 'auth.login' %} aria-current="page"{% endif %}>Log In</a>
         {{ button_link('Sign Up', url_for('auth.signup')) }}
       {% endif %}
     </nav>

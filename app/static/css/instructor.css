@@ -1,0 +1,44 @@
+/* Authentication, settings and dashboard layouts; Master and Client keep their own shells. */
+.instructor-page { padding-inline: env(safe-area-inset-left) env(safe-area-inset-right); }
+.instructor-page .page-content { padding-block: var(--space-6); }
+.instructor-container { max-width: 70rem; }
+.instructor-page .panel { border-radius: var(--radius-lg); padding: var(--space-5); min-width: 0; }
+.instructor-page .panel > h2:first-child { margin-top: 0; }
+.instructor-page :where(h1, h2, p, label, .control-help) { overflow-wrap: anywhere; }
+.instructor-page .button { min-height: 48px; max-width: 100%; overflow-wrap: anywhere; }
+.instructor-page :where(input:not([type="hidden"], [type="checkbox"]), select) { min-height: 48px; font-size: max(1rem, 16px); }
+.instructor-page .site-nav [aria-current="page"] { text-decoration: underline; text-underline-offset: .35em; }
+.instructor-page .site-footer { margin-top: var(--space-5); }
+.auth-card { box-shadow: var(--shadow-md); }
+.auth-brand { display: flex; align-items: center; gap: var(--space-3); color: var(--color-primary); font-weight: var(--font-weight-medium); }
+.auth-brand .brand-mark { flex: 0 0 auto; }
+.auth-card h1 { margin-block: var(--space-5) var(--space-3); }
+.auth-form { margin-top: var(--space-6); }
+.auth-form > .alert { margin-bottom: var(--space-5); }
+.form-primary { width: 100%; }
+.auth-alternative { margin: var(--space-6) 0 0; padding-top: var(--space-5); border-top: 1px solid var(--color-border); color: var(--color-text-muted); }
+.auth-alternative a { font-weight: var(--font-weight-medium); }
+.workspace-heading { margin-bottom: var(--space-6); }
+.workspace-heading h1 { margin-block: var(--space-2) var(--space-3); }
+.workspace-heading p:last-child { margin-bottom: 0; }
+.workspace-eyebrow { color: var(--color-primary); font-size: var(--font-size-sm); font-weight: var(--font-weight-bold); letter-spacing: .08em; text-transform: uppercase; margin: 0; }
+.workspace-icon { display: inline-grid; place-items: center; width: 48px; height: 48px; background: var(--color-surface-muted); color: var(--color-primary); border-radius: var(--radius-md); }
+.settings-grid, .dashboard-grid { display: grid; gap: var(--space-5); }
+.settings-form > .alert { margin-bottom: var(--space-5); }
+.settings-group .form-field { margin: var(--space-5) 0 0; padding-top: var(--space-5); border-top: 1px solid var(--color-border); }
+.settings-group select { max-width: 100%; }
+.form-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; margin-top: var(--space-6); }
+.form-actions > .button { flex: 1 1 100%; }
+.form-actions > p { flex-basis: 100%; }
+.session-card { box-shadow: var(--shadow-md); }
+.session-code { padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-muted); }
+.session-code strong { display: block; overflow-wrap: anywhere; }
+.dashboard-grid .button { width: 100%; }
+.dashboard-hint { margin-top: var(--space-5); }
+@media (min-width: 48rem) {
+  .instructor-page .page-content { padding-block: var(--space-7); }
+  .instructor-page .panel { padding: var(--space-6); }
+  .settings-grid, .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); }
+  .form-actions > .button { flex: 0 1 auto; }
+  .dashboard-grid .button { width: auto; }
+}

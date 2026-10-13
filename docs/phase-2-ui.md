@@ -15,6 +15,7 @@ lightly improves instructor and authentication pages. The Master View retains it
 two-column queue/QR layout in these initial milestones; Milestone 2.3 below replaces
 that layout. Its CSS lives in `master.css`. Milestone 2.4 below brings the independent
 student shell and queue layouts onto the same design foundation.
+Milestone 2.5 below completes the authentication, settings and dashboard treatment.
 
 ## Files and components
 
@@ -441,3 +442,134 @@ headless viewport/text-scaling checks cannot establish those behaviors. Deploy
 templates and static files together through the existing Azure workflow. There
 are **no new dependencies, configuration changes or database migrations**. SQL
 Server/Azure SQL, queue services, authentication and anonymous identity are unchanged.
+
+## Milestone 2.5 — Authentication and instructor settings
+
+### Pages and layout
+
+Login and signup share `auth/base.html`, a centered card inside the existing
+36rem form container. Branding, a clear heading, brief guidance, required-field
+markers, full-width submit buttons and a link to the other authentication page
+provide a consistent layout. Signup still collects only display name, email,
+password and confirmation. Password guidance matches the existing validator:
+15–128 characters, with spaces allowed. Login retains email and password only.
+The existing throttled-attempts page uses the same shell and a warning alert;
+its HTTP 429 response and Retry-After header are unchanged.
+
+`instructor/base.html` applies the new workspace stylesheet to settings and the
+dashboard. The completed Master and Client Views retain their own shells/styles.
+Settings remains one POST form with six controls and one Save settings action:
+
+- **When to alert:** Next Up/advance warnings, Currently Serving, and the
+  existing 1–3 waiting-request warning distance.
+- **How alerts appear:** visual emphasis and permission for students to opt into
+  sound or vibration. Descriptions distinguish permission from enabling media.
+
+No control is automatically saved or disabled when another preference changes.
+In particular, warning distance is retained when Next Up alerts are off. Status
+remains visible to students regardless of alert preferences. Back to dashboard
+leads to the existing active Master View link without an additional database query.
+
+The dashboard was the only other instructor administrative screen. Its two cards
+present the existing active-session/Start help session action and a settings link.
+An active session retains its public code and Open Master View link; no extra
+start action is introduced. There are no implemented profile editing, password
+reset, account deletion, historical-session or metrics pages, so no placeholder
+links or new routes were added.
+
+Forms remain one column. Settings/dashboard cards become two columns at 48rem;
+their centered container is capped at 70rem. Page-specific rules in
+`css/instructor.css` are scoped to `.instructor-page`. Large text, long names and
+button labels wrap; controls have a minimum 48px height and text inputs use at
+least 16px type. Increased zoom may require vertical scrolling. Shared navigation
+keeps its anonymous/authenticated actions and POST/CSRF logout; current Dashboard,
+Settings and Login links receive `aria-current="page"`.
+
+### Shared forms and feedback
+
+The existing tokens, panels, button variants, decorative SVG icons, typography,
+flash alerts and focus ring are reused. No new tokens were necessary. Extensions
+to `ui/components.html` and `design-system.css` are reusable:
+
+- `field(input, autocomplete='off', help_text='', password_toggle=false)` keeps
+  associated labels/error regions and adds required indicators, described help
+  and an optional password visibility button. Existing two-argument callers work.
+- `choice(input, help_text)` presents a native checkbox inside a large clickable
+  label, with separate accessible name, description and error references.
+- `form_feedback(form)` displays a generic error summary when validation fails;
+  individual fields still display the original backend validation messages.
+
+Non-password inputs and checked values retain server-rendered submitted values
+after validation fails. PasswordField's default non-echoing behavior is preserved.
+Generic invalid-credential and duplicate-account messages remain unchanged.
+Signup/settings success still uses the existing flash mechanism and redirects;
+uncategorized flashes retain the shared informational styling. Session expiration
+still redirects to login with Flask-Login's existing message. Default CSRF and
+HTTP error responses, and the generic database-unavailable response, are unchanged;
+no global error-handler redesign was introduced.
+
+### Minimal JavaScript and security boundaries
+
+`instructor-forms.js` is loaded only by the two new page shells. Show/Hide controls
+are hidden until enhanced, use `type="button"` and `aria-controls`, and have
+action-specific accessible labels. They change only the input type, without
+copying, storing, logging or modifying its value. Submission and page departure
+conceal revealed passwords. Native password inputs/autocomplete still work without
+JavaScript, including paste and password-manager support.
+
+Forms marked `data-submit-feedback` show Signing in / Creating account / Saving
+settings / Starting session feedback after native validation. Only the submit
+button is disabled, leaving credential, CSRF and preference fields in the native
+POST. A duplicate-submission guard resets on page restoration or after 10 seconds
+if navigation stalls. It never retries or sends a request itself. Native POST
+forms, server validation, rate limits and duplicate-session protection remain
+authoritative.
+
+No routes, services, models, validators, authentication rules, ownership checks,
+session lifetimes or redirect policies changed. In particular, login still ignores
+arbitrary `next` destinations and redirects to the dashboard. There are no new
+dependencies, external assets, configuration variables or database migrations.
+SQL Server/Azure SQL and Azure startup/deployment assumptions are unchanged.
+
+### Verification and manual checks
+
+Ruff and `git diff --check` passed. The full SQL Server pytest suite passed **374
+tests**, with nine optional browser cases skipped in the browserless container.
+All **nine Chrome browser cases** passed on the host, including the new instructor
+form fixture for required validation, password toggling/concealment, pending
+submissions, preserved POST fields and restoration after navigation.
+
+`test_instructor_ui.py` adds template semantics, local assets, password guidance,
+retained non-password values, settings error/persistence feedback, dashboard
+navigation and the rate-limit recovery page. Existing authentication, logout,
+CSRF, ownership, Client, Master, QR and production startup tests remain intact.
+
+Chrome rendered the actual Flask templates at 320, 375, 390, 430, 768, 1024,
+1280, 1440 and 1920px for login, signup, settings and both dashboard states,
+plus three server-validation error states (48 page/viewport combinations).
+Additional checks covered long names, 200% text scaling and no-JavaScript login.
+No horizontal overflow was found. These rendering checks used synthetic account,
+session and preference data; database-backed behavior is covered by pytest.
+
+Manual staging review:
+
+1. Use physical iOS/Android phones, tablet and desktop browsers. Check narrow
+   layouts, the mobile keyboard, autofill/password managers, landscape and native
+   browser zoom at 200%. Headless text scaling does not replace these checks.
+2. Sign up, submit mismatched passwords, try invalid login, then authenticate and
+   log out. Verify clear errors, retained non-password input and empty password
+   fields after failed submissions. Use keyboard and a screen reader to operate
+   Show/Hide and hear field descriptions and validation feedback.
+3. Change all settings, save, reload and confirm persistence. Leave without saving
+   to confirm no automatic update. While a session is active, check that students
+   receive the instructor's saved alert policy without changing queue order.
+4. Test dashboard empty/active states, open the Master View, and scan its QR from
+   an anonymous student browser. Confirm existing queue operations still work.
+5. Repeat essential forms with JavaScript disabled. Simulate a stalled navigation
+   and browser Back to confirm submit controls recover. Check an expired login
+   and the existing throttled-attempt message.
+
+No physical-device or screen-reader audit was performed. Deploy the new base
+templates, macros, CSS and JavaScript together through the existing Azure workflow.
+Keep later account features separate from these presentation components; only
+display additional controls after their backend behavior exists.
