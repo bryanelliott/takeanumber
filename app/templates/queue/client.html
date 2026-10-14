@@ -1,5 +1,6 @@
 {% extends 'queue/base.html' %}
 {% block content %}
+  {% include '_live_status.html' %}
   <div id="live-state" tabindex="-1">{% include 'queue/_client_state.html' %}</div>
   <p id="client-announcement" class="screen-reader-only" role="status" aria-live="polite" aria-atomic="true"></p>
   <p id="student-announcement" class="screen-reader-only" role="status" aria-live="polite" aria-atomic="true"></p>

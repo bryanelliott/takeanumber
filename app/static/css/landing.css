@@ -2,7 +2,7 @@
 .hero-intro { display: grid; gap: var(--space-5); margin-bottom: var(--space-6); }
 .eyebrow { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); }
 .status-dot { width: .5rem; height: .5rem; flex: 0 0 auto; border-radius: var(--radius-pill); background: var(--color-primary); }
-.hero-intro h1 { margin: var(--space-5) 0 0; font-size: var(--font-size-display); line-height: 1.07; letter-spacing: -.05em; }
+.hero-intro h1 { margin: var(--space-5) 0 0; font-size: var(--font-size-display); line-height: 1.07; letter-spacing: -.05em; overflow-wrap: anywhere; }
 .hero-intro h1 span { color: var(--color-primary); }
 .hero-copy { align-self: end; max-width: 32rem; }
 .lead { font-size: var(--font-size-lg); color: var(--color-text-muted); }

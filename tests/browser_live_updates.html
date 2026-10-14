@@ -8,6 +8,8 @@
 <script>
   const handlers = {};
   const requests = [];
+  let online = true;
+  Object.defineProperty(navigator, 'onLine', {get: () => online});
   let periodic;
   window.setInterval = (callback) => { periodic = callback; return 1; };
   const socket = {
@@ -65,13 +67,34 @@
       assert(document.getElementById("live-state").textContent.includes("missed changes restored"), "resync on reconnect");
       periodic();
       await respond(state("periodic reconciliation"));
+      const status = document.getElementById("live-status");
+      assert(!status.hidden, "enable connection feedback when JavaScript initializes");
+      handlers.queue_changed();
+      await respond("", {ok: false, status: 503});
+      assert(status.textContent.includes("out of date"), "failed reads mark retained data stale");
+      assert(document.getElementById("live-state").textContent.includes("periodic reconciliation"), "temporary failures retain last known state");
+      online = false;
+      window.dispatchEvent(new Event("offline"));
+      assert(status.textContent.includes("offline"), "report offline immediately");
+      periodic();
+      handlers.connect_error();
+      assert(requests.length === 0 && status.textContent.includes("offline"), "offline suppresses reads and misleading socket status");
+      online = true;
+      window.dispatchEvent(new Event("online"));
+      assert(requests.length === 1, "reconnect immediately reads authoritative state");
+      await respond(state("online reconciliation"));
+      assert(status.textContent === "Live updates connected.", "successful read restores live status");
       handlers.queue_changed();
       await respond("login page", {redirected: true});
       assert(!socket.connected, "stop socket after authorization loss");
       assert(!document.getElementById("live-state").textContent.includes("login page"), "never render redirected content");
       assert(!document.querySelector("input"), "clear stale private view after authorization loss");
       handlers.queue_changed();
+      window.dispatchEvent(new Event("online"));
+      online = false;
+      window.dispatchEvent(new Event("offline"));
       assert(requests.length === 0, "no refresh after stopping");
+      assert(status.textContent === "Live updates stopped.", "offline cannot obscure authorization loss");
       document.body.dataset.result = "passed";
     } catch (error) {
       document.body.dataset.result = "failed";

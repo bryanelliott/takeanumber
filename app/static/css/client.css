@@ -16,7 +16,7 @@
 .client-ticket { box-shadow: var(--shadow-md); }
 .client-ticket-number { font-size: clamp(5rem, 14vw, 9rem); color: var(--color-primary); font-weight: var(--font-weight-bold); line-height: 1.1; letter-spacing: -.04em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; margin-block: var(--space-4); }
 .client-ticket-name { font-size: var(--font-size-lg); overflow-wrap: anywhere; }
-.client-ticket h3 { font-size: clamp(1.35rem, 3vw, 1.75rem); margin-block: 0 var(--space-2); }
+.client-ticket h3 { font-size: clamp(1.35rem, 3vw, 1.75rem); margin-block: 0 var(--space-2); overflow-wrap: anywhere; }
 .client-ticket p:last-child { margin-bottom: 0; }
 .student-alert { padding: var(--space-4); border: 2px solid; border-radius: var(--radius-md); animation: none; transition: none; }
 .next-alert { color: var(--color-warning); background: var(--color-warning-surface); border-style: dashed; }
@@ -45,7 +45,6 @@
 .client-option { min-width: 0; }
 .client-option button { width: 100%; }
 .client-option p { color: var(--color-text-muted); font-size: var(--font-size-sm); margin-top: var(--space-2); }
-.client-page #live-status { padding: var(--space-3) var(--space-4); border-left: 3px solid var(--color-control-border); font-size: var(--font-size-sm); color: var(--color-text-muted); margin-block: var(--space-5); }
 .client-footer { padding-block: var(--space-5) max(var(--space-5), env(safe-area-inset-bottom)); color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .client-recovery { max-width: var(--width-form); margin-inline: auto; }
 @media (min-width: 48rem) {

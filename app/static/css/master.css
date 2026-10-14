@@ -17,7 +17,7 @@
 .ticket-number--next { font-size: clamp(3.5rem, 6vw, 7rem); color: var(--color-primary); }
 .ticket-name { font-size: clamp(1.25rem, 2vw, 2rem); line-height: 1.25; margin: var(--space-2) 0 var(--space-4); overflow-wrap: anywhere; }
 .queue-action { margin-top: var(--space-4); }
-.queue-action button { min-width: 8rem; font-size: var(--font-size-lg); }
+.queue-action button { min-width: min(8rem, 100%); max-width: 100%; overflow-wrap: anywhere; font-size: var(--font-size-lg); }
 .queue-status--serving button { background: var(--color-surface); color: var(--color-primary); }
 .queue-status--serving button:hover { background: var(--color-surface-muted); }
 .queue-status--serving button:focus-visible { outline-color: var(--color-surface); }
@@ -38,7 +38,6 @@
 .join-hint { font-size: var(--font-size-sm); color: var(--color-text-muted); margin: var(--space-2) 0; }
 .qr { display: block; width: 100%; height: auto; aspect-ratio: 1; margin: var(--space-2) auto; background: white; }
 .join-url { display: inline-flex; align-items: center; min-height: 44px; max-width: 100%; overflow-wrap: anywhere; font-size: var(--font-size-sm); }
-.master-page #live-status { font-size: var(--font-size-sm); color: var(--color-text-muted); margin-block: var(--space-4) 0; }
 .master-page .site-footer { display: none; }
 .ended-panel { margin-bottom: var(--space-5); }
 .master-layout #live-state.is-unavailable { display: block; }
@@ -49,6 +48,7 @@
   .master-layout, .master-layout #live-state, .master-layout [data-master-status] { display: contents; }
   .master-content { display: flex; flex-direction: column; }
   .master-heading { order: -3; }
+  .master-content > .connection-status, .master-content > noscript { order: -3; }
   .flash-messages { order: -4; }
   .queue-status { order: -2; }
   .join-panel { order: -1; margin-bottom: var(--space-5); }
@@ -57,7 +57,7 @@
 @media (min-width: 64rem) {
   .master-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); }
   .join-panel { position: sticky; top: var(--space-4); }
-  .qr { width: min(100%, max(16rem, calc(100svh - 20rem))); }
+  .qr { width: min(100%, max(16rem, calc(100svh - 23rem))); }
 }
 
 /* Local preference: no fixed page height, clipping or fullscreen dependency. */
@@ -73,5 +73,5 @@
 .master-page.is-presenting .ticket-number--next { font-size: clamp(3.5rem, min(8vw, 12svh), 10rem); }
 .master-page.is-presenting .queue-empty { margin-block: var(--space-5); }
 @media (min-width: 64rem) {
-  .master-page.is-presenting .qr { width: min(100%, max(16rem, calc(100svh - 12rem))); }
+  .master-page.is-presenting .qr { width: min(100%, max(16rem, calc(100svh - 15rem))); }
 }

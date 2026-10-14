@@ -573,3 +573,63 @@ No physical-device or screen-reader audit was performed. Deploy the new base
 templates, macros, CSS and JavaScript together through the existing Azure workflow.
 Keep later account features separate from these presentation components; only
 display additional controls after their backend behavior exists.
+
+## Milestone 2.6 — Final quality and consistency
+
+The detailed inventory, findings, test matrix, artifacts, release checklist and
+remaining manual checks are in [phase-2-final-qa.md](phase-2-final-qa.md).
+
+### Persistent connection feedback
+
+Master and Client templates now include `_live_status.html` before their queue
+content. Keep this single `role="status"` region outside `#live-state`, including
+in Presentation Mode. `_live_updates.html` continues to hold configuration and
+scripts only. The shared `.connection-status` component uses existing spacing,
+muted text and border tokens; `data-state="warning"` uses warning tokens alongside
+explicit text explaining that queue data may be stale. Duplicate page-specific
+status rules were removed. The status is hidden until JavaScript initializes;
+`noscript` supplies manual-refresh guidance without promising a connection.
+
+`live-updates.js` listens for browser offline/online events. Offline reports stale
+data immediately and suppresses new reads; online uses the existing serialized
+authoritative reader. Fetch failures also label retained data as potentially stale.
+The existing Socket.IO connection, 30-second fallback poll, timeout, visibility
+reconciliation, stop-on-authorization-loss and deduplicated status text remain.
+No additional polling, mutation request, storage or backend state is introduced.
+
+### Reflow and QR sizing
+
+Landing display text and Client alert headings can wrap long words at enlarged
+text sizes. Master action buttons cap their minimum/maximum widths at the available
+card width, preserving readability at 320px and 200% root text. Normal layouts and
+the existing 48rem/64rem breakpoints remain unchanged.
+
+The desktop QR height budget now reserves room for visible connection feedback:
+`100svh - 23rem` in standard mode and `100svh - 15rem` in Presentation Mode,
+subject to the existing available-width and minimum-size constraints. There is no
+fixed page height. At default text and 1920×1080, actual Chrome rendering measured
+712px and 840px square QR images respectively, with Currently Serving and Next Up
+visible. Smaller/zoomed windows may scroll instead of clipping content.
+
+### Durable QA and maintenance
+
+`tests/test_ui_browser.py` serves actual templates with synthetic service snapshots
+over loopback HTTP, using locally installed Chrome/Edge and existing CDP/websocket
+dependencies. It never connects to a database. `tests/ui_audit.js` supplies focused
+DOM, control-label, ARIA-reference, touch-height, text-contrast and image checks.
+The suite renders 24 page states at ten viewports and checks text spacing, enlarged
+text, keyboard focus, offline recovery, stable QR and no-JavaScript guidance.
+`tests/browser_live_updates.html` additionally exercises failed reads, immediate
+offline feedback, recovery and the authorization-loss stop boundary.
+
+Run `python -m pytest tests/test_live_browser.py tests/test_ui_browser.py -q` with
+an installed supported browser. Set `UI_QA_ARTIFACT_DIR` to an ignored local directory
+to preserve screenshots and JSON measurements. Browser cases remain optional and
+skip explicitly when tooling is absent. Continue to run Ruff and the dedicated
+SQL Server pytest suite; UI snapshots are not substitutes for backend regressions.
+
+Future changes should reuse the status partial and tokens, keep QR outside live
+fragments, and preserve the single authoritative update reader. Do not interpret
+focused automated checks as WCAG certification. Real-device keyboards, native zoom,
+screen readers, media support and projector scanning remain manual release checks.
+No new dependencies, configuration changes or database migrations are required.

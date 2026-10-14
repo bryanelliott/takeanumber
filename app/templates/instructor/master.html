@@ -13,6 +13,7 @@
     </div>
     <button id="presentation-toggle" class="button button--secondary" type="button" aria-pressed="false" hidden>Presentation Mode</button>
   </div>
+  {% include '_live_status.html' %}
   <div class="master-layout">
     <div id="live-state" tabindex="-1">{% include 'instructor/_master_state.html' %}</div>
     {% if state.status == 'active' %}

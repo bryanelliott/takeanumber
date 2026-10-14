@@ -11,7 +11,13 @@
   let stopped = false;
   let timer;
   let requestController;
-  function setStatus(message) {
+  status.hidden = false;
+  function setStatus(message, state = "connected") {
+    if (!navigator.onLine && state !== "stopped") {
+      message = "You're offline. Queue information may be out of date. Reconnect to update.";
+      state = "warning";
+    }
+    status.dataset.state = state;
     if (status.textContent !== message) status.textContent = message;
   }
   const socket = typeof window.io === "function" ? window.io({
@@ -62,6 +68,10 @@
 
   async function refresh() {
     if (stopped) return;
+    if (!navigator.onLine) {
+      setStatus("");
+      return;
+    }
     pending = true;
     if (fetching) return;
     fetching = true;
@@ -80,7 +90,7 @@
             document.dispatchEvent(new Event("queue:before-state"));
             target.textContent = "This view is no longer available. Reload the page to continue.";
             document.dispatchEvent(new Event("queue:state"));
-            setStatus("Live updates stopped.");
+            setStatus("Live updates stopped.", "stopped");
             return;
           }
           if (!response.ok) throw new Error("State unavailable");
@@ -98,7 +108,7 @@
         }
       }
     } catch (_) {
-      if (!stopped) setStatus("Updates unavailable. Use Refresh to try again.");
+      if (!stopped) setStatus("Updates unavailable. Queue information may be out of date. Retrying automatically; Refresh is also available.", "warning");
     } finally {
       fetching = false;
     }
@@ -107,11 +117,16 @@
   socket?.on("queue_changed", refresh);
   socket?.on("connect", refresh); // reconcile changes missed before connection/reconnection
   socket?.on("disconnect", () => {
-    if (!stopped) setStatus("Live connection interrupted; reconnecting.");
+    if (!stopped) setStatus("Live connection interrupted; reconnecting. Queue information may be out of date.", "warning");
   });
   socket?.on("connect_error", () => {
-    if (!stopped) setStatus("Live connection unavailable; checking periodically.");
+    if (!stopped) setStatus("Live connection unavailable; checking periodically. Queue information may be out of date.", "warning");
   });
+  window.addEventListener("offline", () => {
+    if (!stopped) setStatus("");
+  });
+  window.addEventListener("online", refresh);
+  if (!navigator.onLine) setStatus("");
   timer = setInterval(refresh, 30000); // also recover from a failed post-commit notification
   window.addEventListener("pagehide", stop); // Exit/disconnect never invokes Leave Queue
   window.addEventListener("pageshow", (event) => {
